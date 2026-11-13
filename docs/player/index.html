@@ -134,8 +134,15 @@
 	canvas.width = window.innerWidth;
 	canvas.height = window.innerHeight;
 
+	// The build's version, which web/deploy.cmake writes into the site's copy (a hash of bspguy.wasm).
+	// Both files are loaded with it, so a browser never pairs a cached bspguy.js with a newer
+	// bspguy.wasm, or the other way round ("imported Memory with incompatible maximum size").
+	var build = '05674c17b3d2';
+	var buildQuery = build.charAt(0) === '@' ? '' : '?v=' + build;
+
 	var Module = {
 		canvas: canvas,
+		locateFile: function(path, prefix) { return prefix + path + buildQuery; },
 		bspguyConfig: config,
 		print: function(text) { console.log(text); },
 		printErr: function(text) { console.warn(text); },
@@ -149,7 +156,7 @@
 	// hosts that can't (GitHub Pages), coi-sw.js adds them from a service worker and reloads once.
 	function start() {
 		var script = document.createElement('script');
-		script.src = 'bspguy.js';
+		script.src = 'bspguy.js' + buildQuery; // threads load the same URL
 		document.body.appendChild(script);
 	}
 	if (window.crossOriginIsolated) {
