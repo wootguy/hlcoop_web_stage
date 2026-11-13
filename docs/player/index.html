@@ -137,11 +137,11 @@
 	// The build's version, which web/deploy.cmake writes into the site's copy (a hash of bspguy.wasm).
 	// Both files are loaded with it, so a browser never pairs a cached bspguy.js with a newer
 	// bspguy.wasm, or the other way round ("imported Memory with incompatible maximum size").
-	var build = '4f4a5204a6b6';
+	var build = 'be5c292c95f0';
 	var buildQuery = build.charAt(0) === '@' ? '' : '?v=' + build;
 
 	// Potato mode (slow PCs, often with a 32-bit browser, whose tab has 2-4 GB of address space in all)
-	// starts fewer worker threads and reserves less memory, or the tab runs out of memory ("OOM | small").
+	// reserves less memory, or the tab can run out ("OOM | small").
 	var potato = config.potato === '1';
 	if (potato && window.WebAssembly && WebAssembly.Memory) {
 		// bspguy.js asks for its build's maximum (1 GB). A smaller one still fits the module's import.
@@ -156,7 +156,6 @@
 	}
 
 	var Module = {
-		bspguyThreads: potato ? 8 : 24, // PTHREAD_POOL_SIZE in CMakeLists.txt
 		canvas: canvas,
 		locateFile: function(path, prefix) { return prefix + path + buildQuery; },
 		bspguyConfig: config,
