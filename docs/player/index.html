@@ -28,6 +28,8 @@
 	//                     which needs a WebSocket relay in front of the HLTV port.
 	//   potato=1          for slow computers: draw nothing until every download has finished, render
 	//                     at 50% scale at most, and default to WebGL 1 (the web app's "Potato spectator")
+	//   skip=world,...    turn parts of playback off for measuring, like the Debug window: world, brushes,
+	//                     models, sprites, effects, dlights, audio
 	//   glcache=0         send every GL call to the browser, without skipping the ones that wouldn't
 	//                     change anything (for checking if that causes a rendering problem)
 	//   stream=url       with direct=1: a WebSocket relay for the stream of `server` (only that
@@ -42,6 +44,8 @@
 		config.potato = params.get('potato');
 	if (params.get('glcache'))
 		config.glcache = params.get('glcache');
+	if (params.get('skip'))
+		config.skip = params.get('skip');
 	var token = document.cookie.match(/(?:^|; )token=([^;]*)/);
 	if (token && token[1] && token[1] !== 'DELETED')
 		config.token = decodeURIComponent(token[1]);
@@ -137,7 +141,7 @@
 	// The build's version, which web/deploy.cmake writes into the site's copy (a hash of bspguy.wasm).
 	// Both files are loaded with it, so a browser never pairs a cached bspguy.js with a newer
 	// bspguy.wasm, or the other way round ("imported Memory with incompatible maximum size").
-	var build = '3c21752996f5';
+	var build = '30aa17ac4f34';
 	var buildQuery = build.charAt(0) === '@' ? '' : '?v=' + build;
 
 	// Potato mode (slow PCs, often with a 32-bit browser, whose tab has 2-4 GB of address space in all)
