@@ -28,6 +28,8 @@
 	//                     which needs a WebSocket relay in front of the HLTV port.
 	//   potato=1          for slow computers: draw nothing until every download has finished, render
 	//                     at 50% scale at most, and default to WebGL 1 (the web app's "Potato spectator")
+	//   glcache=0         send every GL call to the browser, without skipping the ones that wouldn't
+	//                     change anything (for checking if that causes a rendering problem)
 	//   stream=url       with direct=1: a WebSocket relay for the stream of `server` (only that
 	//                     address), such as wss://host:3000/hltv from the hlcoop_webserver plugin.
 	var params = new URLSearchParams(location.search);
@@ -38,6 +40,8 @@
 		config.connect = params.get('connect');
 	if (params.get('potato'))
 		config.potato = params.get('potato');
+	if (params.get('glcache'))
+		config.glcache = params.get('glcache');
 	var token = document.cookie.match(/(?:^|; )token=([^;]*)/);
 	if (token && token[1] && token[1] !== 'DELETED')
 		config.token = decodeURIComponent(token[1]);
