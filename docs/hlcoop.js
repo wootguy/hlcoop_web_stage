@@ -2982,6 +2982,8 @@ function apply_chat_settings() {
 	g_settings.show_flags = document.getElementById("show_country_flags").checked;
 	g_settings.show_avatars = document.getElementById("show_avatars").checked;
 	g_settings.keep_screen_awake = document.getElementById("keep_screen_awake").checked;
+	let oldPotato = !!g_settings.potato_spectator;
+	g_settings.potato_spectator = document.getElementById("potato_spectator").checked;
 	g_settings.show_web_joins = document.getElementById("show_web_joins_button").checked;
 	g_settings.compound_icons = document.getElementById("compound_icons").checked;
 	g_settings.alt_wrap = document.getElementById("alt_wrap_button").checked;
@@ -3046,9 +3048,13 @@ function apply_chat_settings() {
 	keep_screen_awake();
 	apply_translations(true);
 	live_send_translation_mode();
-	
+
 	save_settings();
 	setTimeout(scroll_chat_to_bottom, 100);
+
+	// the player reads the option when it starts (live_player_url), so an open live view restarts
+	if (g_settings.potato_spectator != oldPotato && live_view_is_open())
+		open_live_view();
 }
 
 let g_chat_cooldown_end = 0;
@@ -3178,6 +3184,7 @@ function load_settings() {
 	document.getElementById("show_country_flags").checked = g_settings.show_flags;
 	document.getElementById("show_avatars").checked = g_settings.show_avatars;
 	document.getElementById("keep_screen_awake").checked = g_settings.keep_screen_awake;
+	document.getElementById("potato_spectator").checked = !!g_settings.potato_spectator;
 	document.getElementById("show_web_joins_button").checked = g_settings.show_web_joins;
 	document.getElementById("hide_maps_cb").checked = g_settings.hide_maps;
 	document.getElementById("compound_icons").checked = g_settings.compound_icons;
@@ -3700,6 +3707,7 @@ async function setup() {
 	document.getElementById("show_country_flags").addEventListener("click", apply_chat_settings);
 	document.getElementById("show_avatars").addEventListener("click", apply_chat_settings);
 	document.getElementById("keep_screen_awake").addEventListener("click", apply_chat_settings);
+	document.getElementById("potato_spectator").addEventListener("click", apply_chat_settings);
 	document.getElementById("show_perf").addEventListener("click", apply_chat_settings);
 	document.getElementById("perf_ups_down").addEventListener("click", () => step_perf_ups(-1));
 	document.getElementById("perf_ups_up").addEventListener("click", () => step_perf_ups(1));

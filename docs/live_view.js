@@ -76,6 +76,8 @@ function live_player_url(hasProxy) {
 	params.set("server", config.hltv_address);
 	if (!g_live_password_mode)
 		params.set("connect", "1");
+	if (g_settings && g_settings.potato_spectator)
+		params.set("potato", "1"); // the cog menu's "Potato spectator", for slow computers
 	if (!hasProxy) {
 		params.set("direct", "1");
 		params.set("stream", new URL("hltv", config.server_url).href);

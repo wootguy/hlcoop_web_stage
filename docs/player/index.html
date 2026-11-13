@@ -26,7 +26,9 @@
 	//                     Assets then come from https://host/<path> (the fastdl server, which must
 	//                     allow this page's origin with CORS) and the stream from wss://host:port,
 	//                     which needs a WebSocket relay in front of the HLTV port.
-	//   stream=url        with direct=1: a WebSocket relay for the stream of `server` (only that
+	//   potato=1          for slow computers: draw nothing until every download has finished, render
+	//                     at 50% scale at most, and default to WebGL 1 (the web app's "Potato spectator")
+	//   stream=url       with direct=1: a WebSocket relay for the stream of `server` (only that
 	//                     address), such as wss://host:3000/hltv from the hlcoop_webserver plugin.
 	var params = new URLSearchParams(location.search);
 	var config = {};
@@ -34,6 +36,8 @@
 		config.server = params.get('server');
 	if (params.get('connect'))
 		config.connect = params.get('connect');
+	if (params.get('potato'))
+		config.potato = params.get('potato');
 	var token = document.cookie.match(/(?:^|; )token=([^;]*)/);
 	if (token && token[1] && token[1] !== 'DELETED')
 		config.token = decodeURIComponent(token[1]);
