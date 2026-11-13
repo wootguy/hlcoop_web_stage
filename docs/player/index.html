@@ -82,6 +82,11 @@
 		if (e.key === 'Alt') e.preventDefault();
 	});
 
+	// Ctrl+O opens a demo file in the player (DemoViewer::openDemoDialog), not a page in the browser
+	window.addEventListener('keydown', function(e) {
+		if ((e.ctrlKey || e.metaKey) && e.code === 'KeyO') e.preventDefault();
+	}, true);
+
 	// Firefox opens its quick find bar when ' or / is typed (or any character, with "search for text
 	// when you start typing" enabled), which takes the keys away from the chat box. The page has no
 	// text fields of its own, so cancel every character press. GLFW still reads the character from
