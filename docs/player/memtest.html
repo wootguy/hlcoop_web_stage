@@ -54,6 +54,9 @@ function run() {
 		['shared 512 initial, max 768', 512, 768, 16],
 		['shared 16 -> max 768', 16, 768, 16],
 	];
+	var only = new URLSearchParams(location.search).get('t');
+	if (only !== null)
+		tests = [tests[+only]];
 	var i = 0;
 	function next() {
 		if (i >= tests.length) { log('done'); return; }
