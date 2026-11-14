@@ -57,7 +57,7 @@ function run() {
 	var only = new URLSearchParams(location.search).get('t');
 	var qmax = new URLSearchParams(location.search).get('max');
 	if (qmax)
-		tests = [['shared 256 -> max ' + qmax, 256, +qmax, 16]];
+		tests = [['shared ' + (+(new URLSearchParams(location.search).get('init') || 256)) + ' -> max ' + qmax, +(new URLSearchParams(location.search).get('init') || 256), +qmax, 16]];
 	else if (only !== null)
 		tests = [tests[+only]];
 	var i = 0;
