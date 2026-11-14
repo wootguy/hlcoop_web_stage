@@ -55,7 +55,10 @@ function run() {
 		['shared 16 -> max 768', 16, 768, 16],
 	];
 	var only = new URLSearchParams(location.search).get('t');
-	if (only !== null)
+	var qmax = new URLSearchParams(location.search).get('max');
+	if (qmax)
+		tests = [['shared 256 -> max ' + qmax, 256, +qmax, 16]];
+	else if (only !== null)
 		tests = [tests[+only]];
 	var i = 0;
 	function next() {
