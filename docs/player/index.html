@@ -163,12 +163,18 @@
 	// the browser gets round to freeing it, so asking for another right away fails with "out of memory".
 	// This page reserves it before loading bspguy.js: it waits and tries again while the old one is
 	// freed, and then settles for a smaller maximum. bspguy.js's own request gets this memory, since any
-	// maximum up to the build's fits the module's import. Potato mode (slow PCs, often with a 32-bit
-	// browser) starts lower, at 768 MB.
+	// maximum up to the build's fits the module's import. Potato mode (slow PCs) starts lower, at 768 MB.
+	//
+	// 32-bit Firefox only reserves the maximum asked for up to about 640 MB. Past that the memory is
+	// still created, but it can only grow to half its maximum (768 MB stopped at 384 MB, 1 GB at 512
+	// MB), and the player then fails to allocate. 32-bit browsers ask for 512 MB, which always grew all
+	// the way in that test.
 	var potato = config.potato === '1';
+	var ua = navigator.userAgent;
+	var browser32 = /WOW64|i[3-6]86|armv7/i.test(ua) || (/Windows/.test(ua) && !/Win64|x64/i.test(ua));
 	var PAGE = 65536;
 	var MEMORY_INITIAL_PAGES = 256 * 1024 * 1024 / PAGE; // -sINITIAL_MEMORY. Grown below if the build asks for more
-	var memoryMaxPages = (potato ? 768 : 1024) * 1024 * 1024 / PAGE;
+	var memoryMaxPages = (browser32 ? 512 : potato ? 768 : 1024) * 1024 * 1024 / PAGE;
 	var MEMORY_MIN_PAGES = 512 * 1024 * 1024 / PAGE; // smallest maximum to settle for
 	var MEMORY_WAIT_MS = 15000; // how long to wait for the old memory before trying smaller ones
 	var playerMemory = null;
