@@ -114,18 +114,31 @@
 	// over something other than the canvas. A drag that started on the canvas, here or in the iframe,
 	// never presses the button in the outer page. This doesn't depend on when the browser sends the event
 	// (Firefox on Windows sends it well after the release). Menus opened from the keyboard are left alone.
+	// Listeners on the outer page are removed when this page goes away (the player restarting or the
+	// live view closing). They belong to this page, so while the outer page kept them, it kept this
+	// whole page alive too, with the player's memory, and a 32-bit browser had no room for the next one.
 	function blockDragContextMenu(win) {
 		var allowNext = false;
-		win.addEventListener('mousedown', function(e) {
+		function onMouseDown(e) {
 			if (e.button === 2)
 				allowNext = !(e.target && e.target.id === 'canvas');
-		}, true);
-		win.addEventListener('contextmenu', function(e) {
+		}
+		function onContextMenu(e) {
 			var fromMouse = e.button === 2 && !(e.mozInputSource === 6); // 6 = MOZ_SOURCE_KEYBOARD
 			if (fromMouse && !allowNext)
 				e.preventDefault();
 			allowNext = false;
-		}, true);
+		}
+		win.addEventListener('mousedown', onMouseDown, true);
+		win.addEventListener('contextmenu', onContextMenu, true);
+		if (win !== window) {
+			window.addEventListener('pagehide', function() {
+				try {
+					win.removeEventListener('mousedown', onMouseDown, true);
+					win.removeEventListener('contextmenu', onContextMenu, true);
+				} catch (e) {}
+			});
+		}
 	}
 	blockDragContextMenu(window);
 	try {
