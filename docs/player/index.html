@@ -144,19 +144,61 @@
 	var build = 'de5409c955ec';
 	var buildQuery = build.charAt(0) === '@' ? '' : '?v=' + build;
 
-	// Potato mode (slow PCs, often with a 32-bit browser, whose tab has 2-4 GB of address space in all)
-	// reserves less memory, or the tab can run out ("OOM | small").
+	// The player's memory: a shared WebAssembly.Memory whose whole maximum (1 GB in the build) is
+	// reserved up front, because it has threads. A 32-bit browser's tab has only 2-4 GB of address
+	// space in all, and after a restart (location.reload) the last session's memory stays reserved until
+	// the browser gets round to freeing it, so asking for another right away fails with "out of memory".
+	// This page reserves it before loading bspguy.js: it waits and tries again while the old one is
+	// freed, and then settles for a smaller maximum. bspguy.js's own request gets this memory, since any
+	// maximum up to the build's fits the module's import. Potato mode (slow PCs, often with a 32-bit
+	// browser) starts lower, at 768 MB.
 	var potato = config.potato === '1';
-	if (potato && window.WebAssembly && WebAssembly.Memory) {
-		// bspguy.js asks for its build's maximum (1 GB). A smaller one still fits the module's import.
-		var MemoryClass = WebAssembly.Memory;
-		var POTATO_MAX_PAGES = 768 * 1024 * 1024 / 65536;
+	var PAGE = 65536;
+	var MEMORY_INITIAL_PAGES = 256 * 1024 * 1024 / PAGE; // -sINITIAL_MEMORY. Grown below if the build asks for more
+	var memoryMaxPages = (potato ? 768 : 1024) * 1024 * 1024 / PAGE;
+	var MEMORY_MIN_PAGES = 512 * 1024 * 1024 / PAGE; // smallest maximum to settle for
+	var MEMORY_WAIT_MS = 15000; // how long to wait for the old memory before trying smaller ones
+	var playerMemory = null;
+	var MemoryClass = window.WebAssembly && WebAssembly.Memory;
+	if (MemoryClass) {
 		WebAssembly.Memory = function(desc) {
-			if (desc && desc.shared && desc.maximum > POTATO_MAX_PAGES)
-				desc = Object.assign({}, desc, { maximum: POTATO_MAX_PAGES });
+			if (desc && desc.shared && playerMemory) {
+				var mem = playerMemory;
+				playerMemory = null;
+				var pages = mem.buffer.byteLength / PAGE;
+				if (desc.initial > pages)
+					mem.grow(desc.initial - pages);
+				return mem;
+			}
 			return new MemoryClass(desc);
 		};
 		WebAssembly.Memory.prototype = MemoryClass.prototype;
+	}
+
+	// calls done() once playerMemory is reserved, or with an error message if it can't be
+	function reserveMemory(done) {
+		if (!MemoryClass || typeof SharedArrayBuffer === 'undefined')
+			return done(); // the player reports what's missing
+		var started = Date.now();
+		function attempt() {
+			try {
+				playerMemory = new MemoryClass({ initial: MEMORY_INITIAL_PAGES, maximum: memoryMaxPages, shared: true });
+				if (Date.now() - started > 100)
+					console.log('Reserved ' + (memoryMaxPages * PAGE / 1048576) + ' MB of memory after waiting '
+						+ ((Date.now() - started) / 1000).toFixed(1) + 's');
+				return done();
+			} catch (e) {}
+			var waited = Date.now() - started;
+			if (waited >= MEMORY_WAIT_MS) {
+				if (memoryMaxPages <= MEMORY_MIN_PAGES)
+					return done('There isn\'t enough memory for the player. Close other tabs, or restart the browser.');
+				memoryMaxPages = Math.max(MEMORY_MIN_PAGES, memoryMaxPages - 128 * 1024 * 1024 / PAGE);
+				console.log('Trying a smaller memory reservation: ' + (memoryMaxPages * PAGE / 1048576) + ' MB');
+			}
+			statusEl.textContent = 'Waiting for memory...';
+			setTimeout(attempt, 500);
+		}
+		attempt();
 	}
 
 	var Module = {
@@ -174,9 +216,16 @@
 	// Cross-Origin-Opener-Policy and Cross-Origin-Embedder-Policy headers. serve.py sends them. On
 	// hosts that can't (GitHub Pages), coi-sw.js adds them from a service worker and reloads once.
 	function start() {
-		var script = document.createElement('script');
-		script.src = 'bspguy.js' + buildQuery; // threads load the same URL
-		document.body.appendChild(script);
+		reserveMemory(function(error) {
+			if (error) {
+				statusEl.textContent = error;
+				return;
+			}
+			statusEl.textContent = '';
+			var script = document.createElement('script');
+			script.src = 'bspguy.js' + buildQuery; // threads load the same URL
+			document.body.appendChild(script);
+		});
 	}
 	if (window.crossOriginIsolated) {
 		start();
