@@ -295,7 +295,7 @@ function live_enable_isolation() {
 
 	live_status("Loading...");
 	live_register_worker().then(function() {
-		live_session_set(LIVE_RELOAD_KEY, "1");
+		live_session_set(LIVE_RELOAD_KEY, g_live_password_mode ? "password" : "1"); // keeps the mode across the reload
 		location.reload();
 	}).catch(function(e) {
 		live_status("The live view couldn't start: " + e);
@@ -358,6 +358,12 @@ ready(function() {
 			open_live_view();
 		});
 	});
+	// the cog menu's "Test spectator app": the player in password mode (its Connect dialog), which
+	// works while signed out. Reopens it in that mode if the view is already open.
+	document.getElementById("test_spectator_button").addEventListener("click", function() {
+		g_live_password_mode = true;
+		open_live_view();
+	});
 	document.addEventListener("keydown", function(e) {
 		// only reaches here when the player doesn't have focus
 		if (e.key == "Escape" && live_view_is_maximized())
@@ -383,6 +389,7 @@ ready(function() {
 	}
 
 	if (live_session_get(LIVE_RELOAD_KEY)) {
+		g_live_password_mode = live_session_get(LIVE_RELOAD_KEY) == "password";
 		open_live_view(); // finishes the camera button's click
 	} else if (live_session_get(LIVE_SHOWED_MAPS_KEY)) {
 		// the page was reloaded with the view open, which showed the hidden map list
