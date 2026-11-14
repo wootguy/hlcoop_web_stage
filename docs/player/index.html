@@ -168,11 +168,32 @@
 				var pages = mem.buffer.byteLength / PAGE;
 				if (desc.initial > pages)
 					mem.grow(desc.initial - pages);
+				logMemoryGrowth(mem);
 				return mem;
 			}
 			return new MemoryClass(desc);
 		};
 		WebAssembly.Memory.prototype = MemoryClass.prototype;
+	}
+
+	// Logs the memory's size whenever it has grown by 64 MB, and once when it's nearly full, since the
+	// player can't use more than the reservation. Any thread can grow it, and a shared memory's buffer
+	// always has the current size, so this checks it on a timer.
+	function logMemoryGrowth(mem) {
+		var MB = 1048576;
+		var maxMB = memoryMaxPages * PAGE / MB;
+		var lastMB = 0, warned = false;
+		setInterval(function() {
+			var mb = mem.buffer.byteLength / MB;
+			if (mb >= lastMB + 64) {
+				lastMB = mb;
+				console.log('Player memory: ' + mb + ' MB of ' + maxMB + ' MB');
+			}
+			if (!warned && mb > maxMB - 32) {
+				warned = true;
+				console.warn('Player memory is nearly full (' + mb + ' MB of ' + maxMB + ' MB)');
+			}
+		}, 1000);
 	}
 
 	// calls done() once playerMemory is reserved, or with an error message if it can't be
