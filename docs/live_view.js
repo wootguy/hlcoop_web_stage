@@ -298,7 +298,8 @@ function live_enable_isolation() {
 		live_session_set(LIVE_RELOAD_KEY, g_live_password_mode ? "password" : "1"); // keeps the mode across the reload
 		location.reload();
 	}).catch(function(e) {
-		live_status("The live view couldn't start: " + e);
+		// e.g. Ladybird has navigator.serviceWorker but can't run one yet
+		live_status(unsupported + " (" + e + ")");
 	});
 }
 
