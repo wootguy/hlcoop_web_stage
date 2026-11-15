@@ -26,7 +26,15 @@
 	//                     Assets then come from https://host/<path> (the fastdl server, which must
 	//                     allow this page's origin with CORS) and the stream from wss://host:port,
 	//                     which needs a WebSocket relay in front of the HLTV port.
-	//   stream=url        with direct=1: a WebSocket relay for the stream of `server` (only that
+	//   potato=1          for slow computers: draw nothing until every download has finished, render
+	//                     at 50% scale at most, and default to WebGL 1 (the web app's "Potato spectator")
+	//   skip=world,...    turn parts of playback off for measuring, like the Debug window: world, brushes,
+	//                     models, sprites, effects, dlights, audio
+	//   glcache=0         send every GL call to the browser, without skipping the ones that wouldn't
+	//                     change anything (for checking if that causes a rendering problem)
+	//   lowmem=MB         for testing: count this much of the memory as used, to see what happens when
+	//                     it runs out (files are skipped, and the map or demo stops loading)
+	//   stream=url      with direct=1: a WebSocket relay for the stream of `server` (only that
 	//                     address), such as wss://host:3000/hltv from the hlcoop_webserver plugin.
 	var params = new URLSearchParams(location.search);
 	var config = {};
@@ -34,6 +42,19 @@
 		config.server = params.get('server');
 	if (params.get('connect'))
 		config.connect = params.get('connect');
+	if (params.get('potato'))
+		config.potato = params.get('potato');
+	if (params.get('glcache'))
+		config.glcache = params.get('glcache');
+	if (params.get('skip'))
+		config.skip = params.get('skip');
+	if (params.get('lowmem'))
+		config.lowmem = params.get('lowmem');
+	// for testing: where to pause a demo file that's opened (DemoViewer::updateOpenedFile)
+	['time', 'follow', 'cam', 'view'].forEach(function(k) {
+		if (params.get(k))
+			config[k] = params.get(k);
+	});
 	var token = document.cookie.match(/(?:^|; )token=([^;]*)/);
 	if (token && token[1] && token[1] !== 'DELETED')
 		config.token = decodeURIComponent(token[1]);
@@ -82,6 +103,11 @@
 		if (e.key === 'Alt') e.preventDefault();
 	});
 
+	// Ctrl+O opens a demo file in the player (DemoViewer::openDemoDialog), not a page in the browser
+	window.addEventListener('keydown', function(e) {
+		if ((e.ctrlKey || e.metaKey) && e.code === 'KeyO') e.preventDefault();
+	}, true);
+
 	// Firefox opens its quick find bar when ' or / is typed (or any character, with "search for text
 	// when you start typing" enabled), which takes the keys away from the chat box. The page has no
 	// text fields of its own, so cancel every character press. GLFW still reads the character from
@@ -97,18 +123,31 @@
 	// over something other than the canvas. A drag that started on the canvas, here or in the iframe,
 	// never presses the button in the outer page. This doesn't depend on when the browser sends the event
 	// (Firefox on Windows sends it well after the release). Menus opened from the keyboard are left alone.
+	// Listeners on the outer page are removed when this page goes away (the player restarting or the
+	// live view closing). They belong to this page, so while the outer page kept them, it kept this
+	// whole page alive too, with the player's memory, and a 32-bit browser had no room for the next one.
 	function blockDragContextMenu(win) {
 		var allowNext = false;
-		win.addEventListener('mousedown', function(e) {
+		function onMouseDown(e) {
 			if (e.button === 2)
 				allowNext = !(e.target && e.target.id === 'canvas');
-		}, true);
-		win.addEventListener('contextmenu', function(e) {
+		}
+		function onContextMenu(e) {
 			var fromMouse = e.button === 2 && !(e.mozInputSource === 6); // 6 = MOZ_SOURCE_KEYBOARD
 			if (fromMouse && !allowNext)
 				e.preventDefault();
 			allowNext = false;
-		}, true);
+		}
+		win.addEventListener('mousedown', onMouseDown, true);
+		win.addEventListener('contextmenu', onContextMenu, true);
+		if (win !== window) {
+			window.addEventListener('pagehide', function() {
+				try {
+					win.removeEventListener('mousedown', onMouseDown, true);
+					win.removeEventListener('contextmenu', onContextMenu, true);
+				} catch (e) {}
+			});
+		}
 	}
 	blockDragContextMenu(window);
 	try {
@@ -121,8 +160,61 @@
 	canvas.width = window.innerWidth;
 	canvas.height = window.innerHeight;
 
+	// The build's version, which web/deploy.cmake writes into the site's copy (a hash of bspguy.wasm).
+	// Both files are loaded with it, so a browser never pairs a cached bspguy.js with a newer
+	// bspguy.wasm, or the other way round ("imported Memory with incompatible maximum size").
+	var build = '2513b51c7be8';
+	var buildQuery = build.charAt(0) === '@' ? '' : '?v=' + build;
+
+	// The player's memory: a shared WebAssembly.Memory of a fixed 512 MB (-sINITIAL_MEMORY in
+	// CMakeLists.txt, without growth), which is reserved and committed when it's made. A 32-bit browser's
+	// tab has only 2-4 GB of address space in all, and after a restart (location.reload) the last
+	// session's memory stays reserved until the browser gets round to freeing it, so asking for another
+	// right away fails with "out of memory". This page makes it before loading bspguy.js, waiting and
+	// trying again while the old one is freed, and bspguy.js's own request gets this one.
+	var PAGE = 65536;
+	var MEMORY_PAGES = 512 * 1024 * 1024 / PAGE;
+	var MEMORY_WAIT_MS = 60000; // the old memory took ~16 s to be freed on a slow 32-bit laptop
+	var playerMemory = null;
+	var MemoryClass = window.WebAssembly && WebAssembly.Memory;
+	if (MemoryClass) {
+		WebAssembly.Memory = function(desc) {
+			if (desc && desc.shared && playerMemory) {
+				var mem = playerMemory;
+				playerMemory = null;
+				if (desc.initial === MEMORY_PAGES && desc.maximum === MEMORY_PAGES)
+					return mem;
+				console.warn('The build asks for a different memory size than index.html made (' + desc.initial
+					+ ' pages, maximum ' + desc.maximum + '). Update MEMORY_PAGES.');
+			}
+			return new MemoryClass(desc);
+		};
+		WebAssembly.Memory.prototype = MemoryClass.prototype;
+	}
+
+	// calls done() once playerMemory is made, or with an error message if it can't be
+	function reserveMemory(done) {
+		if (!MemoryClass || typeof SharedArrayBuffer === 'undefined')
+			return done(); // the player reports what's missing
+		var started = Date.now();
+		function attempt() {
+			try {
+				playerMemory = new MemoryClass({ initial: MEMORY_PAGES, maximum: MEMORY_PAGES, shared: true });
+				if (Date.now() - started > 100)
+					console.log('Got the player\'s memory after waiting ' + ((Date.now() - started) / 1000).toFixed(1) + 's');
+				return done();
+			} catch (e) {}
+			if (Date.now() - started >= MEMORY_WAIT_MS)
+				return done('There isn\'t enough memory for the player. Close other tabs, or restart the browser.');
+			statusEl.textContent = 'Waiting for memory...';
+			setTimeout(attempt, 500);
+		}
+		attempt();
+	}
+
 	var Module = {
 		canvas: canvas,
+		locateFile: function(path, prefix) { return prefix + path + buildQuery; },
 		bspguyConfig: config,
 		print: function(text) { console.log(text); },
 		printErr: function(text) { console.warn(text); },
@@ -135,9 +227,16 @@
 	// Cross-Origin-Opener-Policy and Cross-Origin-Embedder-Policy headers. serve.py sends them. On
 	// hosts that can't (GitHub Pages), coi-sw.js adds them from a service worker and reloads once.
 	function start() {
-		var script = document.createElement('script');
-		script.src = 'bspguy.js';
-		document.body.appendChild(script);
+		reserveMemory(function(error) {
+			if (error) {
+				statusEl.textContent = error;
+				return;
+			}
+			statusEl.textContent = '';
+			var script = document.createElement('script');
+			script.src = 'bspguy.js' + buildQuery; // threads load the same URL
+			document.body.appendChild(script);
+		});
 	}
 	if (window.crossOriginIsolated) {
 		start();
@@ -148,7 +247,9 @@
 			sessionStorage.setItem('coi-reloaded', '1'); // only once, in case the headers don't help
 			location.reload();
 		}).catch(function(e) {
-			statusEl.textContent = 'This page needs cross-origin isolation, and the service worker failed: ' + e;
+			// e.g. Ladybird has navigator.serviceWorker but can't run one yet
+			statusEl.textContent = "Your browser can't run the player on this page. It needs service workers and\n"
+				+ 'cross-origin isolation (try a current Chrome, Edge or Firefox).\n(' + e + ')';
 		});
 	} else {
 		statusEl.textContent = 'This page must be served with Cross-Origin-Opener-Policy: same-origin and\n'
