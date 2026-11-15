@@ -32,8 +32,13 @@
 	//                     models, sprites, effects, dlights, audio
 	//   glcache=0         send every GL call to the browser, without skipping the ones that wouldn't
 	//                     change anything (for checking if that causes a rendering problem)
-	//   lowmem=MB         for testing: count this much of the memory as used, to see what happens when
-	//                     it runs out (files are skipped, and the map or demo stops loading)
+	//   lowmem=MB         for testing: take this much of the memory away, to see what happens when it
+	//                     runs out (files are skipped, and the map or demo stops loading)
+	//   reserve=MB        for testing: the memory kept free for what isn't checked before it's allocated
+	//                     (WEB_MEMORY_RESERVE), to see how much is needed. The Performance window shows
+	//                     the least that's been free.
+	//   demolimit=MB      for testing: the demo acts as if memory ran out once it's this big, so the
+	//                     oldest part of a live stream is dropped
 	//   stream=url      with direct=1: a WebSocket relay for the stream of `server` (only that
 	//                     address), such as wss://host:3000/hltv from the hlcoop_webserver plugin.
 	var params = new URLSearchParams(location.search);
@@ -50,8 +55,13 @@
 		config.skip = params.get('skip');
 	if (params.get('lowmem'))
 		config.lowmem = params.get('lowmem');
-	// for testing: where to pause a demo file that's opened (DemoViewer::updateOpenedFile)
-	['time', 'follow', 'cam', 'view'].forEach(function(k) {
+	if (params.get('reserve'))
+		config.reserve = params.get('reserve');
+	if (params.get('demolimit'))
+		config.demolimit = params.get('demolimit');
+	// for testing: where to pause a demo file that's opened, and how fast to play it (speed=8)
+	// (DemoViewer::updateOpenedFile)
+	['time', 'follow', 'cam', 'view', 'speed'].forEach(function(k) {
 		if (params.get(k))
 			config[k] = params.get(k);
 	});
@@ -163,17 +173,17 @@
 	// The build's version, which web/deploy.cmake writes into the site's copy (a hash of bspguy.wasm).
 	// Both files are loaded with it, so a browser never pairs a cached bspguy.js with a newer
 	// bspguy.wasm, or the other way round ("imported Memory with incompatible maximum size").
-	var build = '2513b51c7be8';
+	var build = '2c12b27d6454';
 	var buildQuery = build.charAt(0) === '@' ? '' : '?v=' + build;
 
-	// The player's memory: a shared WebAssembly.Memory of a fixed 512 MB (-sINITIAL_MEMORY in
+	// The player's memory: a shared WebAssembly.Memory of a fixed 256 MB (-sINITIAL_MEMORY in
 	// CMakeLists.txt, without growth), which is reserved and committed when it's made. A 32-bit browser's
 	// tab has only 2-4 GB of address space in all, and after a restart (location.reload) the last
 	// session's memory stays reserved until the browser gets round to freeing it, so asking for another
 	// right away fails with "out of memory". This page makes it before loading bspguy.js, waiting and
 	// trying again while the old one is freed, and bspguy.js's own request gets this one.
 	var PAGE = 65536;
-	var MEMORY_PAGES = 512 * 1024 * 1024 / PAGE;
+	var MEMORY_PAGES = 256 * 1024 * 1024 / PAGE;
 	var MEMORY_WAIT_MS = 60000; // the old memory took ~16 s to be freed on a slow 32-bit laptop
 	var playerMemory = null;
 	var MemoryClass = window.WebAssembly && WebAssembly.Memory;
