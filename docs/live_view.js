@@ -82,6 +82,12 @@ function live_player_url(hasProxy) {
 		params.set("direct", "1");
 		params.set("stream", new URL("hltv", config.server_url).href);
 	}
+	// the player's testing options (see player/index.html), passed on from the dashboard's address
+	let pageParams = new URLSearchParams(window.location.search);
+	["lowmem", "reserve"].forEach(function(name) {
+		if (pageParams.get(name))
+			params.set(name, pageParams.get(name));
+	});
 	return "player/index.html?" + params.toString();
 }
 
