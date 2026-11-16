@@ -40,7 +40,10 @@
 	//   demolimit=MB      for testing: how much of a live stream is kept (16 MB by default). The oldest
 	//                     part is dropped past it.
 	//   opfs=0            keep the asset packs in memory instead of the browser's storage (the origin
-	//                     private file system), as browsers without it do
+	//                     private file system), as browsers without it do, and don't move model
+	//                     animations to disk while memory is low
+	//   animidle=SECONDS  for testing: while memory is low, model animations that haven't been used for
+	//                     this long are moved to disk (10 by default), and read back when they're needed
 	//   stream=url      with direct=1: a WebSocket relay for the stream of `server` (only that
 	//                     address), such as wss://host:3000/hltv from the hlcoop_webserver plugin.
 	var params = new URLSearchParams(location.search);
@@ -63,6 +66,8 @@
 		config.demolimit = params.get('demolimit');
 	if (params.get('opfs'))
 		config.opfs = params.get('opfs');
+	if (params.get('animidle'))
+		config.animidle = params.get('animidle');
 	// for testing: where to pause a demo file that's opened, and how fast to play it (speed=8)
 	// (DemoViewer::updateOpenedFile)
 	['time', 'follow', 'cam', 'view', 'speed'].forEach(function(k) {
@@ -177,7 +182,7 @@
 	// The build's version, which web/deploy.cmake writes into the site's copy (a hash of bspguy.wasm).
 	// Both files are loaded with it, so a browser never pairs a cached bspguy.js with a newer
 	// bspguy.wasm, or the other way round ("imported Memory with incompatible maximum size").
-	var build = '4e0002cd6679';
+	var build = 'da2116fb481d';
 	var buildQuery = build.charAt(0) === '@' ? '' : '?v=' + build;
 
 	// The player's memory: a WebAssembly.Memory of a fixed 256 MB (-sINITIAL_MEMORY in CMakeLists.txt,
@@ -249,7 +254,65 @@
 			});
 		}).catch(function() {});
 	}
-	reserveMemory(function(error) {
+
+	// "Delete everything" in the settings' Storage tab reloads the page with this set, so the files are
+	// deleted before the player opens any of them: everything in the origin private file system (the asset
+	// packs and swap files) except the swap folders of other pages that are open (they hold a Web Lock
+	// named after theirs), and with 'settings', the saved settings too.
+	function clearStorage(done) {
+		var what = null;
+		try {
+			what = sessionStorage.getItem('bspguy-clear-storage');
+			sessionStorage.removeItem('bspguy-clear-storage');
+		} catch (e) {}
+		if (!what)
+			return done();
+		statusEl.textContent = 'Deleting stored files...';
+		if (what === 'settings') {
+			try {
+				var keys = [];
+				for (var i = 0; i < localStorage.length; i++) {
+					if (localStorage.key(i).indexOf('bspguy:') === 0)
+						keys.push(localStorage.key(i));
+				}
+				keys.forEach(function(k) { localStorage.removeItem(k); });
+			} catch (e) {}
+		}
+		var open = {};
+		var locks = navigator.locks ? navigator.locks.query().then(function(state) {
+			state.held.forEach(function(l) { open[l.name] = 1; });
+		}).catch(function() {}) : Promise.resolve();
+		function removeAll(dir, path) {
+			var keys = dir.keys();
+			function next() {
+				return keys.next().then(function(r) {
+					if (r.done)
+						return;
+					var name = r.value;
+					if (path === 'bspguy-swap/') {
+						if (open['bspguy-swap-' + name])
+							return next(); // another open page's
+					} else if (path === '' && name === 'bspguy-swap') {
+						return dir.getDirectoryHandle(name).then(function(h) { return removeAll(h, 'bspguy-swap/'); })
+							.catch(function() {}).then(next);
+					}
+					return dir.removeEntry(name, { recursive: true }).catch(function(e) {
+						console.warn('Couldn\'t delete ' + path + name + ': ' + e);
+					}).then(next);
+				});
+			}
+			return next();
+		}
+		var opfs = navigator.storage && navigator.storage.getDirectory ? navigator.storage.getDirectory() : null;
+		if (!opfs)
+			return done();
+		locks.then(function() { return opfs; })
+			.then(function(root) { return removeAll(root, ''); })
+			.catch(function(e) { console.warn('Couldn\'t delete the stored files: ' + e); })
+			.then(function() { done(); });
+	}
+
+	clearStorage(function() { reserveMemory(function(error) {
 		if (error) {
 			statusEl.textContent = error;
 			return;
@@ -258,7 +321,7 @@
 		var script = document.createElement('script');
 		script.src = 'bspguy.js' + buildQuery;
 		document.body.appendChild(script);
-	});
+	}); });
 </script>
 </body>
 </html>
