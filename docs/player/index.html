@@ -37,8 +37,8 @@
 	//   reserve=MB        for testing: the memory kept free for what isn't checked before it's allocated
 	//                     (WEB_MEMORY_RESERVE), to see how much is needed. The Performance window shows
 	//                     the least that's been free.
-	//   demolimit=MB      for testing: the demo acts as if memory ran out once it's this big, so the
-	//                     oldest part of a live stream is dropped
+	//   demolimit=MB      for testing: how much of a live stream is kept (16 MB by default). The oldest
+	//                     part is dropped past it.
 	//   stream=url      with direct=1: a WebSocket relay for the stream of `server` (only that
 	//                     address), such as wss://host:3000/hltv from the hlcoop_webserver plugin.
 	var params = new URLSearchParams(location.search);
@@ -173,7 +173,7 @@
 	// The build's version, which web/deploy.cmake writes into the site's copy (a hash of bspguy.wasm).
 	// Both files are loaded with it, so a browser never pairs a cached bspguy.js with a newer
 	// bspguy.wasm, or the other way round ("imported Memory with incompatible maximum size").
-	var build = '4a7359918fff';
+	var build = 'a0646675c3cb';
 	var buildQuery = build.charAt(0) === '@' ? '' : '?v=' + build;
 
 	// The player's memory: a shared WebAssembly.Memory of a fixed 256 MB (-sINITIAL_MEMORY in
