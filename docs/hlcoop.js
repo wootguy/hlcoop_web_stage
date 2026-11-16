@@ -498,7 +498,7 @@ function set_flag(flag, ip, ipinfo) {
 
 function set_avatar(avatar, state, steamid64) {
 	preload_image("https://avatars.steamstatic.com/" + state.steamAvatar);
-	avatar.crossOrigin = "anonymous"; // the dashboard is cross-origin isolated (see live-sw.js)
+	avatar.crossOrigin = "anonymous"; // Steam's avatar host sends CORS headers
 	avatar.src = "https://avatars.steamstatic.com/" + state.steamAvatar;
 	avatar.title = state.steamName + "\n" + steamid64_to_steamid(steamid64);
 	avatar.setAttribute("steamid64", steamid64);

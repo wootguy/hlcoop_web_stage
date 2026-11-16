@@ -173,11 +173,11 @@
 	// The build's version, which web/deploy.cmake writes into the site's copy (a hash of bspguy.wasm).
 	// Both files are loaded with it, so a browser never pairs a cached bspguy.js with a newer
 	// bspguy.wasm, or the other way round ("imported Memory with incompatible maximum size").
-	var build = '539d374b6d75';
+	var build = '2baeea1118af';
 	var buildQuery = build.charAt(0) === '@' ? '' : '?v=' + build;
 
-	// The player's memory: a shared WebAssembly.Memory of a fixed 256 MB (-sINITIAL_MEMORY in
-	// CMakeLists.txt, without growth), which is reserved and committed when it's made. A 32-bit browser's
+	// The player's memory: a WebAssembly.Memory of a fixed 256 MB (-sINITIAL_MEMORY in CMakeLists.txt,
+	// without growth, and -sIMPORTED_MEMORY), which is reserved and committed when it's made. A 32-bit browser's
 	// tab has only 2-4 GB of address space in all, and after a restart (location.reload) the last
 	// session's memory stays reserved until the browser gets round to freeing it, so asking for another
 	// right away fails with "out of memory". This page makes it before loading bspguy.js, waiting and
@@ -189,7 +189,7 @@
 	var MemoryClass = window.WebAssembly && WebAssembly.Memory;
 	if (MemoryClass) {
 		WebAssembly.Memory = function(desc) {
-			if (desc && desc.shared && playerMemory) {
+			if (desc && playerMemory) {
 				var mem = playerMemory;
 				playerMemory = null;
 				if (desc.initial === MEMORY_PAGES && desc.maximum === MEMORY_PAGES)
@@ -204,12 +204,12 @@
 
 	// calls done() once playerMemory is made, or with an error message if it can't be
 	function reserveMemory(done) {
-		if (!MemoryClass || typeof SharedArrayBuffer === 'undefined')
+		if (!MemoryClass)
 			return done(); // the player reports what's missing
 		var started = Date.now();
 		function attempt() {
 			try {
-				playerMemory = new MemoryClass({ initial: MEMORY_PAGES, maximum: MEMORY_PAGES, shared: true });
+				playerMemory = new MemoryClass({ initial: MEMORY_PAGES, maximum: MEMORY_PAGES });
 				if (Date.now() - started > 100)
 					console.log('Got the player\'s memory after waiting ' + ((Date.now() - started) / 1000).toFixed(1) + 's');
 				return done();
@@ -233,38 +233,28 @@
 		onAbort: function(what) { statusEl.textContent = 'The player crashed: ' + what; },
 	};
 
-	// Threads need SharedArrayBuffer, which browsers only allow when the page is served with the
-	// Cross-Origin-Opener-Policy and Cross-Origin-Embedder-Policy headers. serve.py sends them. On
-	// hosts that can't (GitHub Pages), coi-sw.js adds them from a service worker and reloads once.
-	function start() {
-		reserveMemory(function(error) {
-			if (error) {
-				statusEl.textContent = error;
-				return;
-			}
-			statusEl.textContent = '';
-			var script = document.createElement('script');
-			script.src = 'bspguy.js' + buildQuery; // threads load the same URL
-			document.body.appendChild(script);
-		});
+	// The player used to need a cross-origin isolated page for its threads, which coi-sw.js (a service
+	// worker) made it by adding headers. It has no threads now, so a worker a browser still has from then
+	// is removed. Only that one: the website around the player may have its own.
+	if ('serviceWorker' in navigator) {
+		navigator.serviceWorker.getRegistrations().then(function(regs) {
+			regs.forEach(function(reg) {
+				var w = reg.active || reg.waiting || reg.installing;
+				if (w && /\/coi-sw\.js$/.test(new URL(w.scriptURL).pathname))
+					reg.unregister();
+			});
+		}).catch(function() {});
 	}
-	if (window.crossOriginIsolated) {
-		start();
-	} else if ('serviceWorker' in navigator && window.isSecureContext && !sessionStorage.getItem('coi-reloaded')) {
-		navigator.serviceWorker.register('coi-sw.js').then(function() {
-			return navigator.serviceWorker.ready;
-		}).then(function() {
-			sessionStorage.setItem('coi-reloaded', '1'); // only once, in case the headers don't help
-			location.reload();
-		}).catch(function(e) {
-			// e.g. Ladybird has navigator.serviceWorker but can't run one yet
-			statusEl.textContent = "Your browser can't run the player on this page. It needs service workers and\n"
-				+ 'cross-origin isolation (try a current Chrome, Edge or Firefox).\n(' + e + ')';
-		});
-	} else {
-		statusEl.textContent = 'This page must be served with Cross-Origin-Opener-Policy: same-origin and\n'
-			+ 'Cross-Origin-Embedder-Policy: require-corp headers (use web/serve.py).';
-	}
+	reserveMemory(function(error) {
+		if (error) {
+			statusEl.textContent = error;
+			return;
+		}
+		statusEl.textContent = '';
+		var script = document.createElement('script');
+		script.src = 'bspguy.js' + buildQuery;
+		document.body.appendChild(script);
+	});
 </script>
 </body>
 </html>

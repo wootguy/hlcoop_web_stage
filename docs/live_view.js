@@ -1,20 +1,12 @@
 // Live view: replaces the upcoming maps list with the HLTV demo player in player/ (a copy of
 // bspbot's build-web folder: bspguy.js, bspguy.wasm, index.html, coi-sw.js).
 //
-// The player runs on threads, which browsers only allow on a cross-origin isolated page. An iframe
-// can only be isolated if the page around it is too, so the dashboard itself needs the
-// Cross-Origin-Opener-Policy and Cross-Origin-Embedder-Policy headers:
-//   - bspbot's web/serve.py sends them on every page. It also relays the
-//     stream and proxies fastdl downloads, so the player doesn't need the game server to have a
-//     WebSocket relay or CORS headers.
-//   - GitHub Pages (or any plain static server) can't send headers, so live-sw.js adds them to the
-//     dashboard. The dashboard registers it when it loads, so later visits are isolated from the
-//     start. Only a browser that opens the live view before the worker was installed has to reload
-//     the page once. The player then connects to the game server directly (see web/README.md in bspbot):
-//     files come from fastdl, and the stream through the WebServer plugin's relay at
-//     <server_url>/hltv, since browsers can't open the HLTV port's TCP connection themselves.
+// Served by bspbot's web/serve.py (server_adv.bat), the player gets the stream and fastdl downloads
+// through it, so it doesn't need the game server to have a WebSocket relay or CORS headers. Anywhere
+// else (GitHub Pages), it connects to the game server directly (see web/README.md in bspbot): files
+// come from fastdl, and the stream through the WebServer plugin's relay at <server_url>/hltv, since
+// browsers can't open the HLTV port's TCP connection themselves.
 
-var LIVE_RELOAD_KEY = "live-view-reloaded"; // the camera button reloaded the page to isolate it, so the view opens after
 var LIVE_SHOWED_MAPS_KEY = "live-view-showed-maps"; // the map list was hidden before the live view opened
 
 function live_session_get(key) {
@@ -274,39 +266,18 @@ function remove_live_frame() {
 	});
 }
 
-function live_can_isolate() {
-	return "serviceWorker" in navigator && window.isSecureContext;
-}
-
-function live_register_worker() {
-	return navigator.serviceWorker.register("live-sw.js").then(function() {
-		return navigator.serviceWorker.ready;
-	});
-}
-
-// reloads the dashboard with live-sw.js adding the isolation headers
-function live_enable_isolation() {
-	let unsupported = "Your browser can't run the live view on this page. It needs service workers and "
-		+ "cross-origin isolation (try a current Chrome, Edge or Firefox).";
-
-	if (!live_can_isolate()) {
-		live_status(unsupported);
+// The player used to need the dashboard to be cross-origin isolated, which live-sw.js (a service
+// worker) did by adding headers. It doesn't anymore, so a browser that still has the worker loses it.
+function live_remove_old_worker() {
+	if (!("serviceWorker" in navigator))
 		return;
-	}
-	if (live_session_get(LIVE_RELOAD_KEY)) {
-		live_session_set(LIVE_RELOAD_KEY, null); // the reload didn't help. Let the button try again
-		live_status(unsupported);
-		return;
-	}
-
-	live_status("Loading...");
-	live_register_worker().then(function() {
-		live_session_set(LIVE_RELOAD_KEY, g_live_password_mode ? "password" : "1"); // keeps the mode across the reload
-		location.reload();
-	}).catch(function(e) {
-		// e.g. Ladybird has navigator.serviceWorker but can't run one yet
-		live_status(unsupported + " (" + e + ")");
-	});
+	navigator.serviceWorker.getRegistrations().then(function(regs) {
+		regs.forEach(function(reg) {
+			let w = reg.active || reg.waiting || reg.installing;
+			if (w && /\/live-sw\.js$/.test(new URL(w.scriptURL).pathname))
+				reg.unregister();
+		});
+	}).catch(function() {});
 }
 
 function open_live_view() {
@@ -318,12 +289,6 @@ function open_live_view() {
 
 	set_live_view_visible(true);
 	remove_live_frame();
-
-	if (!window.crossOriginIsolated) {
-		live_enable_isolation();
-		return;
-	}
-	live_session_set(LIVE_RELOAD_KEY, null);
 	live_status("");
 
 	live_check_proxy().then(function(hasProxy) {
@@ -378,14 +343,11 @@ ready(function() {
 	});
 
 	document.getElementById("server_selector").addEventListener("change", function() {
-		if (live_view_is_open() && window.crossOriginIsolated)
+		if (live_view_is_open())
 			open_live_view(); // reconnect to the new server's stream
 	});
 
-	// installs live-sw.js ahead of time, so the next visit is isolated and opening the view doesn't
-	// have to reload the page
-	if (!window.crossOriginIsolated && live_can_isolate())
-		live_register_worker().catch(function() {});
+	live_remove_old_worker();
 
 	// links and bookmarks from when the open view was marked with ?live=1. The view only opens
 	// from the camera button.
@@ -395,10 +357,7 @@ ready(function() {
 		history.replaceState(history.state, "", url.toString());
 	}
 
-	if (live_session_get(LIVE_RELOAD_KEY)) {
-		g_live_password_mode = live_session_get(LIVE_RELOAD_KEY) == "password";
-		open_live_view(); // finishes the camera button's click
-	} else if (live_session_get(LIVE_SHOWED_MAPS_KEY)) {
+	if (live_session_get(LIVE_SHOWED_MAPS_KEY)) {
 		// the page was reloaded with the view open, which showed the hidden map list
 		live_session_set(LIVE_SHOWED_MAPS_KEY, null);
 		set_maps_hidden(true);
