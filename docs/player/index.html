@@ -182,17 +182,17 @@
 	// The build's version, which web/deploy.cmake writes into the site's copy (a hash of bspguy.wasm).
 	// Both files are loaded with it, so a browser never pairs a cached bspguy.js with a newer
 	// bspguy.wasm, or the other way round ("imported Memory with incompatible maximum size").
-	var build = 'da2116fb481d';
+	var build = '2b8d6837a138';
 	var buildQuery = build.charAt(0) === '@' ? '' : '?v=' + build;
 
-	// The player's memory: a WebAssembly.Memory of a fixed 256 MB (-sINITIAL_MEMORY in CMakeLists.txt,
+	// The player's memory: a WebAssembly.Memory of a fixed 128 MB (-sINITIAL_MEMORY in CMakeLists.txt,
 	// without growth, and -sIMPORTED_MEMORY), which is reserved and committed when it's made. A 32-bit browser's
 	// tab has only 2-4 GB of address space in all, and after a restart (location.reload) the last
 	// session's memory stays reserved until the browser gets round to freeing it, so asking for another
 	// right away fails with "out of memory". This page makes it before loading bspguy.js, waiting and
 	// trying again while the old one is freed, and bspguy.js's own request gets this one.
 	var PAGE = 65536;
-	var MEMORY_PAGES = 256 * 1024 * 1024 / PAGE;
+	var MEMORY_PAGES = 128 * 1024 * 1024 / PAGE;
 	var MEMORY_WAIT_MS = 60000; // the old memory took ~16 s to be freed on a slow 32-bit laptop
 	var playerMemory = null;
 	var MemoryClass = window.WebAssembly && WebAssembly.Memory;
