@@ -26,8 +26,6 @@
 	//                     Assets then come from https://host/<path> (the fastdl server, which must
 	//                     allow this page's origin with CORS) and the stream from wss://host:port,
 	//                     which needs a WebSocket relay in front of the HLTV port.
-	//   potato=1          for slow computers: draw nothing until every download has finished, render
-	//                     at 50% scale at most, and default to WebGL 1 (the web app's "Potato spectator")
 	//   skip=world,...    turn parts of playback off for measuring, like the Debug window: world, brushes,
 	//                     models, sprites, effects, dlights, audio
 	//   glcache=0         send every GL call to the browser, without skipping the ones that wouldn't
@@ -44,6 +42,8 @@
 	//                     animations to disk while memory is low
 	//   animidle=SECONDS  for testing: while memory is low, model animations that haven't been used for
 	//                     this long are moved to disk (10 by default), and read back when they're needed
+	//   swapclear=SECONDS for testing: delete the swap files this often, putting the models' animations
+	//                     back in memory, as a map change does
 	//   stream=url      with direct=1: a WebSocket relay for the stream of `server` (only that
 	//                     address), such as wss://host:3000/hltv from the hlcoop_webserver plugin.
 	var params = new URLSearchParams(location.search);
@@ -52,8 +52,6 @@
 		config.server = params.get('server');
 	if (params.get('connect'))
 		config.connect = params.get('connect');
-	if (params.get('potato'))
-		config.potato = params.get('potato');
 	if (params.get('glcache'))
 		config.glcache = params.get('glcache');
 	if (params.get('skip'))
@@ -68,6 +66,8 @@
 		config.opfs = params.get('opfs');
 	if (params.get('animidle'))
 		config.animidle = params.get('animidle');
+	if (params.get('swapclear'))
+		config.swapclear = params.get('swapclear');
 	// for testing: where to pause a demo file that's opened, and how fast to play it (speed=8)
 	// (DemoViewer::updateOpenedFile)
 	['time', 'follow', 'cam', 'view', 'speed'].forEach(function(k) {
@@ -182,7 +182,7 @@
 	// The build's version, which web/deploy.cmake writes into the site's copy (a hash of bspguy.wasm).
 	// Both files are loaded with it, so a browser never pairs a cached bspguy.js with a newer
 	// bspguy.wasm, or the other way round ("imported Memory with incompatible maximum size").
-	var build = '2b8d6837a138';
+	var build = 'aed3c02ca881';
 	var buildQuery = build.charAt(0) === '@' ? '' : '?v=' + build;
 
 	// The player's memory: a WebAssembly.Memory of a fixed 128 MB (-sINITIAL_MEMORY in CMakeLists.txt,
