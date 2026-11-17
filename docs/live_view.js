@@ -279,13 +279,23 @@ function live_remove_old_worker() {
 }
 
 function open_live_view() {
-	// the live view takes the place of the map list, so that has to be showing
-	if (document.getElementById("hide_maps_cb").checked) {
+	// the live view takes the place of the map list, so that has to be showing (except in the phone
+	// layout, where it's a panel of its own)
+	if (document.getElementById("hide_maps_cb").checked && !g_compact_mode) {
 		live_session_set(LIVE_SHOWED_MAPS_KEY, "1");
 		set_maps_hidden(false);
 	}
 
+	let was_open = live_view_is_open();
 	set_live_view_visible(true);
+
+	// the phone layout swipes to the live view's panel, after the chat
+	if (g_compact_mode && !was_open) {
+		let container = document.getElementById("content-container");
+		requestAnimationFrame(function() {
+			container.scrollTo({ left: container.scrollWidth, behavior: "smooth" });
+		});
+	}
 	remove_live_frame();
 	live_status("");
 

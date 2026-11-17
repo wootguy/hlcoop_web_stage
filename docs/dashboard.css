@@ -167,9 +167,19 @@
 #content.compact #active_maps {
 	padding-bottom: 15px;
 }
+/* While it's open, the live view is a panel of its own after the chat. The player takes the touches
+   on it, so the gap on its left is where it's swiped back from. */
 #content.compact #live_view {
-	margin-top: 0;
-	margin-bottom: 15px;
+	order: 3;
+	flex: 0 0 100%;
+	width: 100%;
+	height: 100%;
+	min-height: 0;
+	margin: 0;
+	padding: 4px 0 4px 28px;
+	box-sizing: border-box;
+	scroll-snap-align: start;
+	scroll-snap-stop: always;
 }
 
 /* The header is a fixed 100px tall (#content-container's height assumes it), so outside the phone
@@ -1496,10 +1506,6 @@ h2 {
 	margin-top: 20px; /* the space the old header took */
 	clear: both;
 }
-#content.compact #live_view {
-	flex: none;
-	height: 75vh;
-}
 #live_view_frame_container {
 	flex: 1;
 	position: relative;
@@ -1518,13 +1524,11 @@ h2 {
 body.live_maximized #content > :not(#content-container),
 body.live_maximized #content:not(.compact) #content-container > :not(#map_list_container),
 body.live_maximized #content:not(.compact) #map_list_container > :not(#live_view),
-body.live_maximized #content.compact #map_list_container,
-body.live_maximized #content.compact #chat_content,
-body.live_maximized #content.compact #player_list_content > :not(#live_view),
+body.live_maximized #content.compact #content-container > :not(#live_view),
 body.live_maximized #player_profile {
 	display: none !important;
 }
-/* #content.compact is in the selector too, so this wins over the compact layout's 75vh height */
+/* #content.compact is in the selector too, so this wins over the phone layout's panel */
 body.live_maximized #live_view,
 body.live_maximized #content.compact #live_view {
 	position: fixed;

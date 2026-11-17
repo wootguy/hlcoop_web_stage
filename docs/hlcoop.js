@@ -3866,11 +3866,12 @@ function handle_resize() {
 	if (active_maps.parentElement !== target)
 		target.prepend(active_maps);
 
-	// The phone layout's map list panel is for the upcoming maps, so the live view goes under the
-	// current map instead. Moving an iframe reloads it, so this only moves it when the layout changes.
+	// The phone layout's map list panel is for the upcoming maps, so the live view is a panel of its
+	// own after the chat instead. Moving an iframe reloads it, so this only moves it when the layout
+	// changes.
 	if (compact) {
-		if (live_view.previousElementSibling !== active_maps)
-			active_maps.after(live_view);
+		if (live_view.parentElement !== container)
+			container.appendChild(live_view);
 	} else if (live_view.parentElement !== document.getElementById("map_list_container")) {
 		document.getElementById("perf-container").before(live_view);
 	}
