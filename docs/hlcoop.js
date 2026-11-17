@@ -2545,6 +2545,21 @@ function map_grid_offscreen() {
 function content_container_scrolled() {
 	if (g_map_grid_stale && !map_grid_offscreen())
 		update_map_data();
+	update_panel_arrows();
+}
+
+// The phone layout's arrow buttons (shown for a mouse only, by dashboard.css), each hidden when
+// there's no panel that way.
+function update_panel_arrows() {
+	let container = document.getElementById("content-container");
+	let max = container.scrollWidth - container.clientWidth;
+	document.getElementById("panel_prev").classList.toggle("hidden", !g_compact_mode || container.scrollLeft <= 1);
+	document.getElementById("panel_next").classList.toggle("hidden", !g_compact_mode || container.scrollLeft >= max - 1);
+}
+
+function scroll_panels(dir) {
+	let container = document.getElementById("content-container");
+	container.scrollBy({ left: dir * container.clientWidth, behavior: "smooth" });
 }
 
 function update_map_ratings() {
@@ -3674,6 +3689,8 @@ async function setup() {
 	
 	document.getElementById("content-container").classList.remove("hidden");
 	document.getElementById("content-container").addEventListener("scroll", content_container_scrolled, { passive: true });
+	document.getElementById("panel_prev").addEventListener("click", () => scroll_panels(-1));
+	document.getElementById("panel_next").addEventListener("click", () => scroll_panels(1));
 
 	document.getElementById("hide_maps_button").addEventListener("click", () => {
 		document.getElementById("hide_maps_cb").checked = g_settings.hide_maps = true;
@@ -3898,6 +3915,7 @@ function handle_resize() {
 		container.scrollLeft = container.clientWidth;
 		players_panel.scrollTop = active_maps.offsetTop; // the panel is position: relative
 	}
+	update_panel_arrows();
 
 	scroll_chat_to_bottom();
 	

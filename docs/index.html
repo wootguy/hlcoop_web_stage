@@ -2,14 +2,14 @@
 <html>
 	<head>
 		<link rel="shortcut icon" type="image/x-icon" href="icon/favicon.ico">
-		<script type="text/javascript" src="shared.js?v=8"></script>
-		<script type="text/javascript" src="hlcoop.js?v=8"></script>
-		<script type="text/javascript" src="live_view.js?v=8"></script>
+		<script type="text/javascript" src="shared.js?v=9"></script>
+		<script type="text/javascript" src="hlcoop.js?v=9"></script>
+		<script type="text/javascript" src="live_view.js?v=9"></script>
 		<script async type="text/javascript" src="app.js"></script>
 		<script>var Module = { print: console.log, printErr: console.error };</script>
-		<link rel="stylesheet" href="dashboard.css?v=8">
-		<link rel="stylesheet" href="common.css?v=8">
-		<link rel="stylesheet" href="player_profile.css?v=8">
+		<link rel="stylesheet" href="dashboard.css?v=9">
+		<link rel="stylesheet" href="common.css?v=9">
+		<link rel="stylesheet" href="player_profile.css?v=9">
 		<meta name="viewport" content="width=device-width, initial-scale=1">
 		<title id="tab_title">Half-Life Co-op</title>
 	</head>
@@ -282,8 +282,11 @@ The bars underneath the graph represent the total time spent in each type of fun
 					</div>
 				</div>
 			</div>
+			<!-- the phone layout's panels, for a mouse (dashboard.css shows them) -->
+			<button id="panel_prev" class="panel_arrow hidden" title="Previous panel">&#8249;</button>
+			<button id="panel_next" class="panel_arrow hidden" title="Next panel">&#8250;</button>
 		</div>
-		
+
 		<div id="player_profile"></div>
 		
 		<div id="popup" class="popup">

@@ -94,6 +94,7 @@ function live_view_is_open() {
 function set_live_view_visible(visible) {
 	document.getElementById("map_list_container").classList.toggle("live_active", visible);
 	document.getElementById("live_view").classList.toggle("hidden", !visible);
+	update_panel_arrows(); // it's the phone layout's last panel while it's open
 
 	// the camera icons on the current map close the view while it's open, and show a red cross
 	document.querySelectorAll(".watch_live_button").forEach(function(el) {

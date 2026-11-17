@@ -198,6 +198,44 @@
 body.live_maximized #content.compact #live_view::before {
 	display: none;
 }
+/* A mouse can't swipe, so with one the panels have arrow buttons at the screen's edges (hidden by
+   update_panel_arrows when there's no panel that way) */
+.panel_arrow {
+	display: none;
+}
+@media (hover: hover) and (pointer: fine) {
+	#content.compact .panel_arrow {
+		display: block;
+		position: fixed;
+		top: 50%;
+		transform: translateY(-50%);
+		z-index: 50;
+		width: 28px;
+		height: 64px;
+		padding: 0 0 4px 0;
+		border: 1px solid #a80;
+		background: rgba(17, 17, 17, 0.8);
+		color: #FFAA00;
+		font-size: 44px;
+		line-height: 1;
+		cursor: pointer;
+		opacity: 0.7;
+	}
+	#content.compact .panel_arrow:hover {
+		opacity: 1;
+		background: #2e1f00;
+	}
+	#content.compact #panel_prev {
+		left: 0;
+		border-left: none;
+		border-radius: 0 6px 6px 0;
+	}
+	#content.compact #panel_next {
+		right: 0;
+		border-right: none;
+		border-radius: 6px 0 0 6px;
+	}
+}
 
 /* The header is a fixed 100px tall (#content-container's height assumes it), so outside the phone
    layout the update notice sits in the top-left corner instead of pushing the page down */
