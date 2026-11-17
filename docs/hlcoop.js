@@ -41,8 +41,11 @@ var g_map_total = 0;
 var g_is_stats_page = false;
 var g_most_active_id = 0;
 var g_wide_mode = false;
-var g_compact_mode = false;
+var g_compact_mode = false; // phone layout: maps, players and chat are panels swiped between sideways
+var g_stacked_lists = false; // players and web clients tables shown together (wide and phone layouts)
 var g_hide_maps = false;
+var g_map_grid_stale = false; // the phone layout skipped updating the upcoming maps while they were off screen
+var g_compact_positioned = false; // the phone layout has scrolled to the players panel
 var g_max_player_list_rows = 128; // TODO: send web client limit from server
 var g_reload_map_images = true;
 var g_load_avatar_timeout = null;
@@ -336,14 +339,14 @@ function update_table_state(ptable) {
 	
 	let ptable_web = ptable;
 	let plist_web = plist;
-	if (g_wide_mode) {
+	if (g_stacked_lists) {
 		ptable_web = document.getElementById('player_list2');		
 		plist_web = ptable.querySelector('tbody');
 		ptable.classList.remove("web_users");
 		ptable_web.classList.add("web_users_names");
 	}
 	
-	if (g_list_web_users || g_wide_mode) {
+	if (g_list_web_users || g_stacked_lists) {
 		let in_game = new Set(g_player_data.map(p => "" + p.steamid64));
 
 		for (let i = 0; i < plist_web.rows.length; i++) {
@@ -776,7 +779,7 @@ function refresh_player_table_single(plist, player_data, ip_data) {
 function update_table_state_all() {
 	let ptable = document.getElementById('player_list1');
 	
-	if (g_wide_mode) {
+	if (g_stacked_lists) {
 		let ptable_web = document.getElementById('player_list2');
 		update_table_state(ptable);
 		update_table_state(ptable_web);
@@ -789,13 +792,11 @@ function refresh_player_table() {
 	let ptable = document.getElementById('player_list1');
 	let plist = ptable.querySelector('tbody');
 	let oldRowCount = plist.rows.length;
-	
-	let shouldScrollPage = is_page_scrolled_to_bottom();
 
 	// statuses change with time and with the player list, so sort every refresh
 	sort_web_player_data();
 
-	if (g_wide_mode) {
+	if (g_stacked_lists) {
 		let ptable_web = document.getElementById('player_list2');
 		let plist_web = ptable_web.querySelector('tbody');
 		refresh_player_table_single(plist, g_player_data, g_player_ips);
@@ -815,13 +816,9 @@ function refresh_player_table() {
 	
 	document.getElementById('tab_title').textContent = "(" + g_player_data.length + "/32) " + g_current_map + " - " + g_server_name;	
 	
-	if (!g_wide_mode && oldRowCount != plist.rows.length) {
+	if (!g_stacked_lists && oldRowCount != plist.rows.length) {
 		let chatbox = document.getElementById('chat_box_messages');	
 		chatbox.scrollTop = chatbox.scrollHeight;
-	}
-	
-	if (shouldScrollPage && g_compact_mode) {
-		setTimeout(scroll_page_to_bottom, 100);
 	}
 }
 
@@ -2411,8 +2408,13 @@ function update_map_data() {
 		map.classList.add("superhidden");
 	}
 	
+	// The phone layout always has the upcoming maps, but only updates them while their panel is at
+	// least partly on screen. Swiping it into view updates them (content_container_scrolled).
+	let skipGrid = map_grid_offscreen();
+	g_map_grid_stale = skipGrid;
+
 	// update upcoming boxes
-	for (let i = 0; i < g_map_cycle.length && !g_hide_maps; i++) {
+	for (let i = 0; i < g_map_cycle.length && !g_hide_maps && !skipGrid; i++) {
 		let map = upcomingMapBoxes[i];
 		let mapname = g_map_cycle[i][0];
 		
@@ -2432,11 +2434,11 @@ function update_map_data() {
 	
 	let mystats = g_steamid > 1 ? g_player_states[g_steamid].mapstats : {};
 	
-	document.querySelectorAll('.map_container').forEach(function(div) {
+	document.querySelectorAll(skipGrid ? '#current_map, #next_map' : '.map_container').forEach(function(div) {
 		if (div.classList.contains("superhidden")) {
 			return;
 		}
-		
+
 		let map = div.getAttribute("map");
 		let dat = get_map_dat(map);
 		let first_map = get_first_map_in_series(map);
@@ -2522,12 +2524,27 @@ function update_map_data() {
 		}
 	});
 	
-	if (g_reload_map_images) {
-		console.log("Reloaded map images");
+	if (!skipGrid) {
+		if (g_reload_map_images) {
+			console.log("Reloaded map images");
+		}
+		g_reload_map_images = false;
 	}
-	g_reload_map_images = false;
-	
+
 	update_map_metadata();
+}
+
+// true when the phone layout's upcoming maps panel is entirely off screen
+function map_grid_offscreen() {
+	if (!g_compact_mode)
+		return false;
+	let container = document.getElementById("content-container");
+	return container.scrollLeft >= container.clientWidth - 1;
+}
+
+function content_container_scrolled() {
+	if (g_map_grid_stale && !map_grid_offscreen())
+		update_map_data();
 }
 
 function update_map_ratings() {
@@ -3656,7 +3673,8 @@ async function setup() {
 	});
 	
 	document.getElementById("content-container").classList.remove("hidden");
-	
+	document.getElementById("content-container").addEventListener("scroll", content_container_scrolled, { passive: true });
+
 	document.getElementById("hide_maps_button").addEventListener("click", () => {
 		document.getElementById("hide_maps_cb").checked = g_settings.hide_maps = true;
 		handle_resize();
@@ -3818,19 +3836,26 @@ function handle_resize() {
 	let content = document.getElementById("content");
 	let profile = document.getElementById("player_profile");
 	let active_maps = document.getElementById("active_maps");
-	g_hide_maps = document.getElementById("hide_maps_cb").checked;
+	let live_view = document.getElementById("live_view");
+	let container = document.getElementById("content-container");
+	let compact = window.innerWidth < 975;
+
+	// the phone layout always has the upcoming maps, in the panel left of the players
+	g_hide_maps = document.getElementById("hide_maps_cb").checked && !compact;
 
 	let wide = g_hide_maps || window.innerWidth > 1500;
-	let compact = window.innerWidth < 975;
 
 	if (compact)
 		wide = false;
 
+	let was_stacked = g_stacked_lists;
 	g_wide_mode = wide;
 	g_compact_mode = compact;
+	g_stacked_lists = wide || compact;
 
 	content.classList.toggle("wide", wide);
 	content.classList.toggle("compact", compact);
+	content.classList.toggle("stacked", g_stacked_lists);
 	profile.classList.toggle("compact", compact);
 	content.classList.toggle("hide_maps", g_hide_maps);
 
@@ -3840,7 +3865,29 @@ function handle_resize() {
 
 	if (active_maps.parentElement !== target)
 		target.prepend(active_maps);
-	
+
+	// The phone layout's map list panel is for the upcoming maps, so the live view goes under the
+	// current map instead. Moving an iframe reloads it, so this only moves it when the layout changes.
+	if (compact) {
+		if (live_view.previousElementSibling !== active_maps)
+			active_maps.after(live_view);
+	} else if (live_view.parentElement !== document.getElementById("map_list_container")) {
+		document.getElementById("perf-container").before(live_view);
+	}
+
+	if (was_stacked != g_stacked_lists && (g_player_data.length || g_web_player_data.length))
+		refresh_player_table();
+
+	// Start on the players panel, with the page scrolled past the header so the panels fill the
+	// screen. Scrolling the page up shows the header again.
+	if (!compact) {
+		g_compact_positioned = false;
+	} else if (!g_compact_positioned && !container.classList.contains("hidden")) {
+		g_compact_positioned = true;
+		container.scrollLeft = container.clientWidth;
+		window.scrollTo(0, container.getBoundingClientRect().top + window.scrollY);
+	}
+
 	scroll_chat_to_bottom();
 	
 	init_perf_graph();
