@@ -250,8 +250,16 @@ window.addEventListener("message", function(e) {
 // fills the page with the player and hides the rest of the dashboard, so the browser doesn't spend
 // time drawing it. The player's toolbar has the button for it (bspguy_maximize).
 function set_live_view_maximized(maximized) {
+	let was_maximized = live_view_is_maximized();
 	document.body.classList.toggle("live_maximized", maximized);
 	live_post({ type: "bspguy_maximized", maximized: maximized });
+
+	// The phone layout's other panels are hidden while it's maximized, which scrolls the row of
+	// panels back to the first, so this goes back to the live view's panel (the last one).
+	if (was_maximized && !maximized && g_compact_mode && live_view_is_open()) {
+		let container = document.getElementById("content-container");
+		container.scrollLeft = container.scrollWidth;
+	}
 }
 
 function live_view_is_maximized() {
