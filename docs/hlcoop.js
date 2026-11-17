@@ -3866,6 +3866,17 @@ function handle_resize() {
 	if (active_maps.parentElement !== target)
 		target.prepend(active_maps);
 
+	// The phone layout has the header (the links and sign-in button) at the top of the players panel
+	// only, so it scrolls with the panel and the page itself doesn't scroll.
+	let header = document.getElementById("page_header");
+	let players_panel = document.getElementById("player_list_content");
+	if (compact) {
+		if (header.parentElement !== players_panel)
+			players_panel.prepend(header);
+	} else if (header.parentElement !== content) {
+		content.prepend(header);
+	}
+
 	// The phone layout's map list panel is for the upcoming maps, so the live view is a panel of its
 	// own after the chat instead. Moving an iframe reloads it, so this only moves it when the layout
 	// changes.
@@ -3879,14 +3890,13 @@ function handle_resize() {
 	if (was_stacked != g_stacked_lists && (g_player_data.length || g_web_player_data.length))
 		refresh_player_table();
 
-	// Start on the players panel, with the page scrolled past the header so the panels fill the
-	// screen. Scrolling the page up shows the header again.
+	// Start on the players panel, scrolled past the header. Scrolling the panel up shows it.
 	if (!compact) {
 		g_compact_positioned = false;
 	} else if (!g_compact_positioned && !container.classList.contains("hidden")) {
 		g_compact_positioned = true;
 		container.scrollLeft = container.clientWidth;
-		window.scrollTo(0, container.getBoundingClientRect().top + window.scrollY);
+		players_panel.scrollTop = active_maps.offsetTop; // the panel is position: relative
 	}
 
 	scroll_chat_to_bottom();

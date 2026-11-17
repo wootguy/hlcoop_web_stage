@@ -2,20 +2,22 @@
 <html>
 	<head>
 		<link rel="shortcut icon" type="image/x-icon" href="icon/favicon.ico">
-		<script type="text/javascript" src="shared.js?v=6"></script>
-		<script type="text/javascript" src="hlcoop.js?v=6"></script>
-		<script type="text/javascript" src="live_view.js?v=6"></script>
+		<script type="text/javascript" src="shared.js?v=7"></script>
+		<script type="text/javascript" src="hlcoop.js?v=7"></script>
+		<script type="text/javascript" src="live_view.js?v=7"></script>
 		<script async type="text/javascript" src="app.js"></script>
 		<script>var Module = { print: console.log, printErr: console.error };</script>
-		<link rel="stylesheet" href="dashboard.css?v=6">
-		<link rel="stylesheet" href="common.css?v=6">
-		<link rel="stylesheet" href="player_profile.css?v=6">
+		<link rel="stylesheet" href="dashboard.css?v=7">
+		<link rel="stylesheet" href="common.css?v=7">
+		<link rel="stylesheet" href="player_profile.css?v=7">
 		<meta name="viewport" content="width=device-width, initial-scale=1">
 		<title id="tab_title">Half-Life Co-op</title>
 	</head>
 
 	<body>
 		<div id="content">
+			<!-- the phone layout moves this to the top of the players panel (handle_resize) -->
+			<div id="page_header">
 			<h1 id="server_name">Half-Life Co-op</h1>
 			<div id="server_link_container">
 				<a class="server_link" href="/hlcoop_web/">Dashboard</a>
@@ -37,9 +39,10 @@
 				<br/>
 				<div id="login_subtext">(required for some actions)</div>
 			</a>
-			
+
 			<hr>
-		
+			</div>
+
 			<div id="content-container" class="hidden">
 				<div id="player_list_container">
 					<div id="player_list_content">

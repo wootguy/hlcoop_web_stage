@@ -103,10 +103,16 @@
 
 /* Phone layout: the upcoming maps, the maps and players, and the chat are panels the width of the
    screen, side by side in a row that's swiped sideways and snaps to the nearest one. The row is the
-   screen's height and the page header is above it, so scrolling the page up shows the header. Each
-   panel scrolls by itself, and the page scrolls once a panel is at its top. */
+   screen's height, so the page doesn't scroll, and each panel scrolls by itself. The header (the
+   links and sign-in button) is at the top of the players panel only, which starts scrolled past it. */
 #content.compact {
 	height: auto;
+}
+/* tall enough that the players panel can always scroll the header out of view, however few players
+   there are (182px is about the maps and the players heading above it) */
+#content.compact #player_table_container {
+	min-height: calc(100vh - 182px);
+	min-height: calc(100dvh - 182px);
 }
 #content.compact #content-container {
 	display: flex;
@@ -168,7 +174,7 @@
 	padding-bottom: 15px;
 }
 /* While it's open, the live view is a panel of its own after the chat. The player takes the touches
-   on it, so the gap above it is where it's swiped back from. */
+   on it, so the title strip above it is where it's swiped back from. */
 #content.compact #live_view {
 	order: 3;
 	flex: 0 0 100%;
@@ -176,10 +182,21 @@
 	height: 100%;
 	min-height: 0;
 	margin: 0;
-	padding: 28px 0 4px 0;
+	padding: 0 0 4px 0;
 	box-sizing: border-box;
 	scroll-snap-align: start;
 	scroll-snap-stop: always;
+}
+#content.compact #live_view::before {
+	content: "Live view";
+	flex: 0 0 56px;
+	line-height: 56px;
+	text-align: center;
+	font-size: 20px;
+	font-weight: bold;
+}
+body.live_maximized #content.compact #live_view::before {
+	display: none;
 }
 
 /* The header is a fixed 100px tall (#content-container's height assumes it), so outside the phone
