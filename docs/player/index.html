@@ -54,6 +54,8 @@
 		config.connect = params.get('connect');
 	if (params.get('glcache'))
 		config.glcache = params.get('glcache');
+	if (params.get('instancing'))
+		config.instancing = params.get('instancing');
 	if (params.get('skip'))
 		config.skip = params.get('skip');
 	if (params.get('lowmem'))
@@ -68,12 +70,63 @@
 		config.animidle = params.get('animidle');
 	if (params.get('swapclear'))
 		config.swapclear = params.get('swapclear');
-	// for testing: where to pause a demo file that's opened, and how fast to play it (speed=8)
+	// for testing: a demo file to open (demo=URL), where to pause it, how fast to play it (speed=8), and
+	// how long to measure the frame times for first (bench=SECONDS)
 	// (DemoViewer::updateOpenedFile)
-	['time', 'follow', 'cam', 'view', 'speed'].forEach(function(k) {
+	['time', 'follow', 'cam', 'view', 'speed', 'demo', 'bench'].forEach(function(k) {
 		if (params.get(k))
 			config[k] = params.get(k);
 	});
+	// for testing: glcount=SECONDS logs how many of each WebGL call a frame makes, averaged over that
+	// many seconds. Each call costs time in the page and again in the browser's GPU process.
+	if (params.get('glcount')) {
+		var glCounts = {}, glFrames = 0, glPeriod = parseFloat(params.get('glcount')) * 1000;
+		[window.WebGLRenderingContext, window.WebGL2RenderingContext].forEach(function(ctx) {
+			if (!ctx)
+				return;
+			Object.getOwnPropertyNames(ctx.prototype).forEach(function(name) {
+				var desc = Object.getOwnPropertyDescriptor(ctx.prototype, name);
+				if (!desc || typeof desc.value !== 'function' || name === 'constructor')
+					return;
+				var fn = desc.value;
+				ctx.prototype[name] = function() {
+					glCounts[name] = (glCounts[name] || 0) + 1;
+					var result = fn.apply(this, arguments);
+					// WebGL 1's instanced draws and VAOs are extension functions
+					if (name === 'getExtension' && result && !result.bspguyCounted) {
+						result.bspguyCounted = true;
+						for (var key in result) {
+							if (typeof result[key] !== 'function')
+								continue;
+							(function(ext, key, extFn) {
+								ext[key] = function() {
+									glCounts[key] = (glCounts[key] || 0) + 1;
+									return extFn.apply(ext, arguments);
+								};
+							})(result, key, result[key]);
+						}
+					}
+					return result;
+				};
+			});
+		});
+		var glStart = performance.now();
+		(function countFrame() {
+			glFrames++;
+			if (performance.now() - glStart >= glPeriod) {
+				var total = 0, list = Object.keys(glCounts).map(function(k) {
+					total += glCounts[k];
+					return [k, glCounts[k] / glFrames];
+				}).sort(function(a, b) { return b[1] - a[1]; });
+				console.log('GL calls per frame: ' + (total / glFrames).toFixed(0) + ' (' + list.slice(0, 15)
+					.map(function(e) { return e[0] + ' ' + e[1].toFixed(1); }).join(', ') + ')');
+				glCounts = {};
+				glFrames = 0;
+				glStart = performance.now();
+			}
+			requestAnimationFrame(countFrame);
+		})();
+	}
 	var token = document.cookie.match(/(?:^|; )token=([^;]*)/);
 	if (token && token[1] && token[1] !== 'DELETED')
 		config.token = decodeURIComponent(token[1]);
@@ -182,7 +235,7 @@
 	// The build's version, which web/deploy.cmake writes into the site's copy (a hash of bspguy.wasm).
 	// Both files are loaded with it, so a browser never pairs a cached bspguy.js with a newer
 	// bspguy.wasm, or the other way round ("imported Memory with incompatible maximum size").
-	var build = '53dc1c2b707c';
+	var build = '3bf29f19881e';
 	var buildQuery = build.charAt(0) === '@' ? '' : '?v=' + build;
 
 	// The player's memory: a WebAssembly.Memory of a fixed 128 MB (-sINITIAL_MEMORY in CMakeLists.txt,
