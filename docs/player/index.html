@@ -502,7 +502,7 @@
 	// The build's version, which web/deploy.cmake writes into the site's copy (a hash of bspguy.wasm).
 	// Both files are loaded with it, so a browser never pairs a cached bspguy.js with a newer
 	// bspguy.wasm, or the other way round ("imported Memory with incompatible maximum size").
-	var build = '5e74a84a10b1';
+	var build = '12e051f4a08f';
 	var buildQuery = build.charAt(0) === '@' ? '' : '?v=' + build;
 
 	// The player's memory: a WebAssembly.Memory of a fixed 128 MB (-sINITIAL_MEMORY in CMakeLists.txt,
