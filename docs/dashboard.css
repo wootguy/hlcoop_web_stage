@@ -1450,7 +1450,9 @@ body.live_maximized #map_list_container > :not(#live_view),
 body.live_maximized #player_profile {
 	display: none !important;
 }
-body.live_maximized #live_view {
+/* #content.compact is in the selector too, so this wins over the compact layout's 75vh height */
+body.live_maximized #live_view,
+body.live_maximized #content.compact #live_view {
 	position: fixed;
 	left: 0;
 	top: 0;
