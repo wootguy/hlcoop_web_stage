@@ -168,7 +168,7 @@
 	padding-bottom: 15px;
 }
 /* While it's open, the live view is a panel of its own after the chat. The player takes the touches
-   on it, so the gap on its left is where it's swiped back from. */
+   on it, so the gap above it is where it's swiped back from. */
 #content.compact #live_view {
 	order: 3;
 	flex: 0 0 100%;
@@ -176,7 +176,7 @@
 	height: 100%;
 	min-height: 0;
 	margin: 0;
-	padding: 4px 0 4px 28px;
+	padding: 28px 0 4px 0;
 	box-sizing: border-box;
 	scroll-snap-align: start;
 	scroll-snap-stop: always;
