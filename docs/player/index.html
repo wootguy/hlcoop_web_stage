@@ -2,11 +2,20 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no">
 <title>bspguy demo player</title>
 <style>
 	html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
-	canvas { display: block; position: absolute; left: 0; top: 0; outline: none; }
+	/* The CSS size is the page's, whatever the canvas's pixel size is. Otherwise a canvas made bigger than
+	   the screen (GLFW creates it at the window size from the settings) makes a phone's browser widen the
+	   page to fit it, the player then sizes the canvas to that page, and it stays too big for the screen. */
+	canvas { display: block; position: absolute; left: 0; top: 0; width: 100%; height: 100%; outline: none; touch-action: none; }
+	/* takes the phone keyboard's typing for the player's text fields (see bspguyTextInputState) */
+	#textinput {
+		position: absolute; left: 0; top: 0; width: 1px; height: 16px; padding: 0; border: 0; margin: 0;
+		opacity: 0; color: transparent; background: transparent; caret-color: transparent;
+		font-size: 16px; pointer-events: none; z-index: -1;
+	}
 	#status {
 		position: absolute; left: 0; right: 0; top: 45%; text-align: center;
 		font: 16px sans-serif; color: #ccc; white-space: pre-line; pointer-events: none;
@@ -15,6 +24,7 @@
 </head>
 <body>
 <canvas id="canvas" tabindex="0" oncontextmenu="event.preventDefault()"></canvas>
+<input id="textinput" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="go" tabindex="-1">
 <div id="status">Loading...</div>
 <script>
 	// Options (query string):
@@ -22,6 +32,7 @@
 	//   connect=1         connect to `server` right away instead of showing the Connect dialog. If
 	//                     this page has a "token" cookie (from logging in to the hlcoop_web site),
 	//                     it's sent in place of the stream password.
+	//   password=pw       with connect=1: the stream password (instead of the token cookie)
 	//   direct=1          connect to the game server directly instead of through web/serve.py.
 	//                     Assets then come from https://host/<path> (the fastdl server, which must
 	//                     allow this page's origin with CORS) and the stream from wss://host:port,
@@ -44,6 +55,8 @@
 	//                     this long are moved to disk (10 by default), and read back when they're needed
 	//   swapclear=SECONDS for testing: delete the swap files this often, putting the models' animations
 	//                     back in memory, as a map change does
+	//   texmax=N          model textures bigger than N pixels are halved when uploaded (0 = no limit).
+	//                     256 by default on the Raspberry Pi 3's GPU (VideoCore IV), none elsewhere.
 	//   stream=url      with direct=1: a WebSocket relay for the stream of `server` (only that
 	//                     address), such as wss://host:3000/hltv from the hlcoop_webserver plugin.
 	var params = new URLSearchParams(location.search);
@@ -52,6 +65,8 @@
 		config.server = params.get('server');
 	if (params.get('connect'))
 		config.connect = params.get('connect');
+	if (params.get('password'))
+		config.password = params.get('password');
 	if (params.get('glcache'))
 		config.glcache = params.get('glcache');
 	if (params.get('instancing'))
@@ -70,6 +85,8 @@
 		config.animidle = params.get('animidle');
 	if (params.get('swapclear'))
 		config.swapclear = params.get('swapclear');
+	if (params.get('texmax') !== null)
+		config.texmax = params.get('texmax');
 	// for testing: a demo file to open (demo=URL), where to pause it, how fast to play it (speed=8), and
 	// how long to measure the frame times for first (bench=SECONDS)
 	// (DemoViewer::updateOpenedFile)
@@ -181,11 +198,11 @@
 	}, true);
 
 	// Firefox opens its quick find bar when ' or / is typed (or any character, with "search for text
-	// when you start typing" enabled), which takes the keys away from the chat box. The page has no
-	// text fields of its own, so cancel every character press. GLFW still reads the character from
-	// the same event, and Ctrl/Cmd shortcuts are left alone.
+	// when you start typing" enabled), which takes the keys away from the chat box. So cancel every
+	// character press, except in the hidden text field for phone keyboards (textInput), which needs them.
+	// GLFW still reads the character from the same event, and Ctrl/Cmd shortcuts are left alone.
 	window.addEventListener('keypress', function(e) {
-		if (!e.ctrlKey && !e.metaKey) e.preventDefault();
+		if (!e.ctrlKey && !e.metaKey && e.target !== textInput) e.preventDefault();
 	}, true);
 
 	// Dragging the camera with the right mouse button can end outside the canvas, and releasing it there
@@ -232,10 +249,260 @@
 	canvas.width = window.innerWidth;
 	canvas.height = window.innerHeight;
 
+	// Touch screens: the first finger is the mouse. GLFW does this itself, but presses the button at the
+	// moment the finger lands, without moving the cursor there first, so ImGui saw the tap where the last
+	// one ended. Moving the cursor first isn't enough either: some ImGui items (the settings' tabs) only
+	// take a click once the cursor has been over them for a frame. So the touches are kept from GLFW and
+	// sent as mouse events: the cursor moves when the finger lands, and the button is pressed at least
+	// two frames later. A tap clicks when the finger lifts, and a finger that moves presses the left
+	// button where it landed, for dragging (the seek bar, sliders, looking around), except that one
+	// moving up or down over the UI scrolls the window under it (bspguyTouchScroll). Holding the finger
+	// still for TOUCH_LONG_MS is a right click, which opens the toolbar buttons' menus. Afterwards the
+	// cursor moves off the page, or the last thing tapped would keep showing its tooltip.
+	var TOUCH_LONG_MS = 500, TOUCH_SLOP = 10; // pixels a finger can move and still be holding still
+	var touchId = null, touchX = 0, touchY = 0, touchStartX = 0, touchStartY = 0, touchSeq = 0;
+	var touchReady = false; // two frames have passed since the cursor moved there
+	var touchWant = -1; // the button the touch is (or will be, once ready) pressing, -1 while undecided
+	var TOUCH_SCROLL = 3; // touchWant for a swipe that scrolls
+	var touchButton = -1; // the button pressed now
+	var touchUp = false, touchTimer = 0;
+	var fingerX = 0, fingerY = 0; // where the finger is (touchX and touchY are where the cursor is)
+	function sendMouse(type, button) {
+		var x = touchX, y = touchY;
+		if (type === 'away') {
+			type = 'mousemove';
+			x = y = -10000;
+		}
+		canvas.dispatchEvent(new MouseEvent(type, {
+			clientX: x, clientY: y, button: button || 0, buttons: type === 'mousedown' ? (button === 2 ? 2 : 1) : 0,
+			bubbles: true
+		}));
+	}
+	function afterFrames(n, fn) {
+		requestAnimationFrame(function() { n > 1 ? afterFrames(n - 1, fn) : fn(); });
+	}
+	function touchRelease() {
+		if (touchButton < 0)
+			return;
+		sendMouse('mouseup', touchButton);
+		touchButton = -1;
+		touchAway();
+	}
+	// presses the touch's button once it's ready. A right click, or a touch that has already ended, is
+	// released a frame later.
+	function touchPress() {
+		if (!touchReady || touchWant < 0 || touchWant === TOUCH_SCROLL || touchButton >= 0)
+			return;
+		touchButton = touchWant;
+		sendMouse('mousedown', touchButton);
+		if (touchUp || touchButton === 2)
+			afterFrames(1, touchRelease);
+	}
+	function touchAway() {
+		var seq = touchSeq;
+		afterFrames(2, function() {
+			if (seq === touchSeq && touchId === null)
+				sendMouse('away');
+		});
+	}
+	// moves the cursor, or scrolls, with the finger
+	function touchFollow() {
+		if (touchWant === TOUCH_SCROLL) {
+			if (window.bspguyTouchScroll)
+				window.bspguyTouchScroll(fingerY - touchY);
+			touchY = fingerY;
+		}
+		else if (touchButton === 0) {
+			touchX = fingerX;
+			touchY = fingerY;
+			sendMouse('mousemove');
+		}
+	}
+	// Once the finger has moved, decides if it scrolls or drags. It's only decided once the player has
+	// had a frame with the cursor there, which says if that's over the UI (bspguyOverUi).
+	function touchDecide() {
+		var dx = Math.abs(fingerX - touchStartX), dy = Math.abs(fingerY - touchStartY);
+		if (!touchReady || touchWant >= 0 || (dx <= TOUCH_SLOP && dy <= TOUCH_SLOP))
+			return;
+		clearTimeout(touchTimer);
+		touchWant = dy > dx && window.bspguyOverUi ? TOUCH_SCROLL : 0; // a drag presses where the finger landed
+		touchPress();
+		touchFollow();
+		if (touchId === null && touchWant === TOUCH_SCROLL)
+			touchAway(); // lifted already
+	}
+	function findTouch(list) {
+		for (var i = 0; i < list.length; i++) {
+			if (list[i].identifier === touchId)
+				return list[i];
+		}
+		return null;
+	}
+	window.addEventListener('touchstart', function(e) {
+		if (e.target !== canvas)
+			return;
+		e.stopPropagation();
+		e.preventDefault(); // no mouse events of the browser's own, scrolling or zooming
+		if (touchId !== null || touchButton >= 0 || (touchUp && !touchReady))
+			return; // another finger, or the last touch's click isn't done yet
+		var t = e.changedTouches[0];
+		var seq = ++touchSeq;
+		touchId = t.identifier;
+		touchX = touchStartX = fingerX = t.clientX;
+		touchY = touchStartY = fingerY = t.clientY;
+		touchReady = false;
+		touchWant = -1;
+		touchUp = false;
+		sendMouse('mousemove');
+		afterFrames(2, function() {
+			if (seq !== touchSeq)
+				return;
+			touchReady = true;
+			touchDecide();
+			touchPress();
+		});
+		clearTimeout(touchTimer);
+		touchTimer = setTimeout(function() {
+			if (seq === touchSeq && touchId !== null && touchWant < 0) {
+				touchWant = 2;
+				touchPress();
+			}
+		}, TOUCH_LONG_MS);
+	}, { capture: true, passive: false });
+	window.addEventListener('touchmove', function(e) {
+		if (e.target !== canvas)
+			return;
+		e.stopPropagation();
+		e.preventDefault();
+		var t = findTouch(e.changedTouches);
+		if (!t || touchWant === 2)
+			return;
+		fingerX = t.clientX;
+		fingerY = t.clientY;
+		if (touchWant < 0)
+			touchDecide();
+		else
+			touchFollow();
+	}, { capture: true, passive: false });
+	function onTouchEnd(e) {
+		if (e.target !== canvas)
+			return;
+		e.stopPropagation();
+		e.preventDefault();
+		if (!findTouch(e.changedTouches))
+			return;
+		touchId = null;
+		touchUp = true;
+		clearTimeout(touchTimer);
+		var moved = Math.abs(fingerX - touchStartX) > TOUCH_SLOP || Math.abs(fingerY - touchStartY) > TOUCH_SLOP;
+		if (touchWant < 0) {
+			if (!moved || touchReady) {
+				touchWant = 0; // a tap
+				touchPress();
+			} // else a quick swipe, which is decided once the player is ready
+		}
+		else if (touchButton === 0)
+			touchRelease();
+		else if (touchButton < 0 && (touchWant === 2 || touchWant === TOUCH_SCROLL))
+			touchAway(); // the right click or scroll is done
+	}
+	window.addEventListener('touchend', onTouchEnd, { capture: true, passive: false });
+	window.addEventListener('touchcancel', onTouchEnd, { capture: true, passive: false });
+
+	// A phone only shows its keyboard for a focused text field in the page, and only if it was focused
+	// during a tap. So this hidden one is focused when a tap ends over a text field in the player (the
+	// player shows the text cursor there by then), is moved to where the field's text cursor is, so the
+	// browser keeps it in view above the keyboard, and what's typed in it is sent on to the player
+	// (DemoGui::updateWebTextInput). Typing changes its value in ways key events don't show (Android
+	// keyboards send keyCode 229 and replace whole words as they correct them), so the value is compared
+	// with what was sent: what changed at the end is sent as backspaces and new text. It starts with
+	// spaces so a backspace always has something to delete. Keys that aren't characters (Enter, a real
+	// Backspace key, which GLFW cancels in the field) still go to the player through GLFW.
+	var textInput = document.getElementById('textinput');
+	var TEXT_INPUT_BASE = '  ';
+	var textSent = '', textComposing = false, textWanted = false, textHover = false;
+	function resetTextInput() {
+		textInput.value = TEXT_INPUT_BASE;
+		textSent = TEXT_INPUT_BASE;
+	}
+	function sendTextInput() {
+		var v = textInput.value, i = 0;
+		while (i < v.length && i < textSent.length && v[i] === textSent[i])
+			i++;
+		var c = i > 0 ? v.charCodeAt(i - 1) : 0;
+		if (c >= 0xD800 && c <= 0xDBFF)
+			i--; // don't split a character made of two UTF-16 units
+		var removed = Array.from(textSent.slice(i)).length;
+		var added = v.slice(i);
+		textSent = v;
+		if ((removed || added) && window.bspguyTextTyped)
+			window.bspguyTextTyped(removed, added);
+		if (!textComposing && (v.length < TEXT_INPUT_BASE.length || v.length > 200))
+			resetTextInput();
+	}
+	textInput.addEventListener('input', sendTextInput);
+	// The field keeps what's typed in it, as the keyboard expects: Firefox's Android keyboard sends a
+	// keypress for each letter, and if that's cancelled (as the listener further down does for the rest
+	// of the page) the letter never reaches the field, and the keyboard's backspace finds nothing it typed
+	// to delete. Stopping the keypress doesn't work either: then Firefox doesn't type it in the field. So
+	// the keypress goes on as usual, but GLFW is shown no character in it, and the letter reaches the
+	// player through the input event instead.
+	window.addEventListener('keypress', function(e) {
+		if (e.target === textInput)
+			Object.defineProperty(e, 'charCode', { get: function() { return 0; } });
+	}, true);
+	textInput.addEventListener('compositionstart', function() { textComposing = true; });
+	textInput.addEventListener('compositionend', function() { textComposing = false; sendTextInput(); });
+	function focusTextInput() {
+		resetTextInput();
+		textInput.focus();
+	}
+	// A quick tap can end before the player has drawn a frame with the finger there, so a tap on the line
+	// of the field being edited counts too, and a field that starts being edited just after a tap is
+	// focused then (the browser still counts it as the tap's doing for a few seconds).
+	var textLineY = 0, textLineH = 0, lastTouchEnd = 0;
+	window.addEventListener('touchend', function(e) {
+		if (e.target !== canvas)
+			return;
+		lastTouchEnd = performance.now();
+		if (!textWanted || document.activeElement === textInput)
+			return;
+		var y = e.changedTouches.length ? e.changedTouches[0].clientY : -1e9;
+		var onLine = y >= textLineY - textLineH * 0.3 && y <= textLineY + textLineH * 1.3;
+		if (textHover || onLine)
+			focusTextInput();
+	}, true);
+	// called by the player when the text field it's editing changes (DemoGui::updateWebTextInput)
+	var textField = 0;
+	window.bspguyTextInputState = function(want, field, hover, password, x, y, h) {
+		var started = want && field !== textField;
+		textWanted = !!want;
+		textField = field;
+		textHover = !!hover;
+		textLineY = y;
+		textLineH = h;
+		var type = password ? 'password' : 'text';
+		if (textInput.type !== type)
+			textInput.type = type;
+		textInput.style.left = Math.max(0, Math.min(x, window.innerWidth - 1)) + 'px';
+		textInput.style.top = Math.max(0, Math.min(y, window.innerHeight - h)) + 'px';
+		textInput.style.height = Math.max(h, 1) + 'px';
+		if (!want && document.activeElement === textInput) {
+			textInput.blur(); // hides the keyboard
+			canvas.focus();
+		}
+		else if (started && hover && performance.now() - lastTouchEnd < 1000) {
+			if (document.activeElement === textInput)
+				resetTextInput(); // another field, which the keyboard's word in progress isn't in
+			else
+				focusTextInput();
+		}
+	};
+
 	// The build's version, which web/deploy.cmake writes into the site's copy (a hash of bspguy.wasm).
 	// Both files are loaded with it, so a browser never pairs a cached bspguy.js with a newer
 	// bspguy.wasm, or the other way round ("imported Memory with incompatible maximum size").
-	var build = '3bf29f19881e';
+	var build = '5e74a84a10b1';
 	var buildQuery = build.charAt(0) === '@' ? '' : '?v=' + build;
 
 	// The player's memory: a WebAssembly.Memory of a fixed 128 MB (-sINITIAL_MEMORY in CMakeLists.txt,
