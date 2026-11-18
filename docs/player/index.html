@@ -48,6 +48,9 @@
 	//                     the least that's been free.
 	//   demolimit=MB      for testing: how much of a live stream is kept (16 MB by default). The oldest
 	//                     part is dropped past it.
+	//   streamdemo=1      for testing: a demo file loads like a live stream, only a little ahead of
+	//                     playback, and keeps only its newest demolimit MB, to see what watching a long
+	//                     demo live does to memory
 	//   opfs=0            keep the asset packs in memory instead of the browser's storage (the origin
 	//                     private file system), as browsers without it do, and don't move model
 	//                     animations to disk while memory is low
@@ -79,6 +82,8 @@
 		config.reserve = params.get('reserve');
 	if (params.get('demolimit'))
 		config.demolimit = params.get('demolimit');
+	if (params.get('streamdemo'))
+		config.streamdemo = params.get('streamdemo');
 	if (params.get('opfs'))
 		config.opfs = params.get('opfs');
 	if (params.get('animidle'))
@@ -502,7 +507,7 @@
 	// The build's version, which web/deploy.cmake writes into the site's copy (a hash of bspguy.wasm).
 	// Both files are loaded with it, so a browser never pairs a cached bspguy.js with a newer
 	// bspguy.wasm, or the other way round ("imported Memory with incompatible maximum size").
-	var build = '31e6f06f2b7e';
+	var build = '6f533195c7af';
 	var buildQuery = build.charAt(0) === '@' ? '' : '?v=' + build;
 
 	// The player's memory: a WebAssembly.Memory of a fixed 128 MB (-sINITIAL_MEMORY in CMakeLists.txt,
