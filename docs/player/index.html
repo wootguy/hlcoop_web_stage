@@ -502,7 +502,7 @@
 	// The build's version, which web/deploy.cmake writes into the site's copy (a hash of bspguy.wasm).
 	// Both files are loaded with it, so a browser never pairs a cached bspguy.js with a newer
 	// bspguy.wasm, or the other way round ("imported Memory with incompatible maximum size").
-	var build = '8956f8c248a3';
+	var build = '3a81b723052c';
 	var buildQuery = build.charAt(0) === '@' ? '' : '?v=' + build;
 
 	// The player's memory: a WebAssembly.Memory of a fixed 128 MB (-sINITIAL_MEMORY in CMakeLists.txt,
@@ -578,7 +578,9 @@
 	// "Delete everything" in the settings' Storage tab reloads the page with this set, so the files are
 	// deleted before the player opens any of them: everything in the origin private file system (the asset
 	// packs and swap files) except the swap folders of other pages that are open (they hold a Web Lock
-	// named after theirs), and with 'settings', the saved settings too.
+	// named after theirs), and with 'settings', the saved settings too. "Reset settings" sets
+	// 'reset-settings', which deletes only the saved settings, except the Connect dialog's saved servers
+	// (the stream_favorite lines of bspguy.cfg).
 	function clearStorage(done) {
 		var what = null;
 		try {
@@ -587,16 +589,28 @@
 		} catch (e) {}
 		if (!what)
 			return done();
-		statusEl.textContent = 'Deleting stored files...';
-		if (what === 'settings') {
+		if (what === 'settings' || what === 'reset-settings') {
 			try {
+				var servers = '';
+				if (what === 'reset-settings') {
+					servers = (localStorage.getItem('bspguy:bspguy.cfg') || '').split('\n').filter(function(line) {
+						return line.indexOf('stream_favorite=') === 0;
+					}).map(function(line) { return line + '\n'; }).join('');
+				}
 				var keys = [];
 				for (var i = 0; i < localStorage.length; i++) {
 					if (localStorage.key(i).indexOf('bspguy:') === 0)
 						keys.push(localStorage.key(i));
 				}
 				keys.forEach(function(k) { localStorage.removeItem(k); });
+				if (servers) // without any, the player starts with the default servers
+					localStorage.setItem('bspguy:bspguy.cfg', servers);
 			} catch (e) {}
+		}
+		if (what === 'reset-settings')
+			return done();
+		statusEl.textContent = 'Deleting stored files...';
+		if (what === 'settings') {
 			try { indexedDB.deleteDatabase('bspguy-local'); } catch (e) {} // the local game folder
 		}
 		var open = {};
