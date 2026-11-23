@@ -314,7 +314,7 @@ function set_live_view_visible(visible) {
 	document.getElementById("live_view").classList.toggle("hidden", !visible);
 	update_panel_arrows(); // it's the phone layout's last panel while it's open
 
-	// the camera icons on the current map close the view while it's open, and show a red cross
+	// the camera icon on the current map closes the view while it's open, and show a red cross
 	document.querySelectorAll(".watch_live_button").forEach(function(el) {
 		el.classList.toggle("live_open", visible);
 		if (!el.dataset.openTitle)
@@ -553,9 +553,9 @@ function close_live_view() {
 }
 
 ready(function() {
-	// camera icons on the current map's image. They open the live view, or close it if it's open.
-	["watch_live_button", "watch_live_password_button"].forEach(function(id) {
-		document.getElementById(id).addEventListener("click", function(e) {
+	// camera icon on the current map's image. It opens the live view, or close it if it's open.
+	{
+		document.getElementById("watch_live_button").addEventListener("click", function(e) {
 			e.preventDefault(); // the map image is a link to the map's page
 			e.stopPropagation();
 			if (live_view_is_open()) {
@@ -563,11 +563,8 @@ ready(function() {
 				return;
 			}
 			open_live_view();
-			// the admin's password camera starts with debug mode checked (the player's Connect dialog)
-			if (id.indexOf("password") != -1)
-				document.getElementById("live_debug").checked = true;
 		});
-	});
+	}
 	live_load_launch_options();
 	document.getElementById("live_launch_button").addEventListener("click", live_launch_clicked);
 	document.getElementById("live_folder_pick").addEventListener("click", function() { live_pick_folder(true); });
