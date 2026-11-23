@@ -18,10 +18,6 @@
 	flex: 1 1 auto;
 	min-height: 0;
 }
-#content.compact #chat_content {
-	height: calc(100vh + 10px);
-	min-height: calc(100vh + 10px);
-}
 #player_list_container > h2 {
 	flex: 0;
 }
@@ -58,7 +54,7 @@
 	display: flex;
 	flex-direction: row-reverse;
 }
-#content.wide .list_header_container {
+#content.stacked .list_header_container {
 	display: none;
 }
 /* The tables are 450px and the column grows by the width of the table container's scrollbar, if
@@ -98,30 +94,147 @@
 	display: none;
 	margin-top: 0px;
 }
-#content.wide .ptable_header {
+#content.stacked .ptable_header {
 	display: block;
 }
-#content.wide #player_list2 {
+#content.stacked #player_list2 {
 	display: table;
 }
 
-#content.compact #player_list_container {
-	width: 100%;
-	padding-bottom: 10px;
-	height: initial;
+/* Phone layout: the upcoming maps, the maps and players, and the chat are panels the width of the
+   screen, side by side in a row that's swiped sideways and snaps to the nearest one. The row is the
+   screen's height, so the page doesn't scroll, and each panel scrolls by itself. The header (the
+   links and sign-in button) is at the top of the players panel only, which starts scrolled past it. */
+#content.compact {
+	height: auto;
 }
-#content.compact #player_list_content {
-	margin: 0 auto;
+/* tall enough that the players panel can always scroll the header out of view, however few players
+   there are (182px is about the maps and the players heading above it) */
+#content.compact #player_table_container {
+	min-height: calc(100vh - 182px);
+	min-height: calc(100dvh - 182px);
+}
+#content.compact #content-container {
+	display: flex;
+	flex-direction: row;
+	height: 100vh;
+	height: 100dvh;
+	overflow-x: auto;
+	overflow-y: hidden;
+	scroll-snap-type: x mandatory;
+	overscroll-behavior-x: contain;
+	scrollbar-width: none;
+}
+#content.compact #content-container::-webkit-scrollbar {
+	display: none;
+}
+/* the players and chat panels are children of this in the other layouts */
+#content.compact #player_list_container {
+	display: contents;
+}
+#content.compact #map_list_container,
+#content.compact #player_list_content,
+#content.compact #chat_content {
+	flex: 0 0 100%;
+	width: 100%;
+	height: 100%;
+	min-height: 0;
+	margin: 0;
+	padding: 0 4px;
+	box-sizing: border-box;
+	float: none;
+	scroll-snap-align: start;
+	scroll-snap-stop: always;
 }
 #content.compact #map_list_container {
+	order: 0;
+}
+#content.compact #player_list_content {
+	order: 1;
+	overflow-y: auto;
+	overflow-x: hidden;
+}
+#content.compact #map_list_container {
+	padding-bottom: 4px;
+}
+#content.compact #chat_content {
+	order: 2;
+	padding-bottom: 4px;
+}
+#content.compact #chat_box {
+	margin-top: 4px;
+}
+#content.compact #upcoming_maps_header {
+	padding-top: 0;
+}
+#content.compact #hide_maps_button, #content.compact #show_maps_button {
+	display: none;
+}
+#content.compact #active_maps {
+	padding-bottom: 15px;
+}
+/* While it's open, the live view is a panel of its own after the chat. The player takes the touches
+   on it, so the title strip above it is where it's swiped back from. */
+#content.compact #live_view {
+	order: 3;
+	flex: 0 0 100%;
 	width: 100%;
-	padding-bottom: 10px;
+	height: 100%;
+	min-height: 0;
+	margin: 0;
+	padding: 0 0 4px 0;
+	box-sizing: border-box;
+	scroll-snap-align: start;
+	scroll-snap-stop: always;
 }
-#content.compact #active_maps {
-	padding-bottom: 15px;
+#content.compact #live_view::before {
+	content: "Live view";
+	flex: 0 0 56px;
+	line-height: 56px;
+	text-align: center;
+	font-size: 20px;
+	font-weight: bold;
 }
-#content.compact #active_maps {
-	padding-bottom: 15px;
+body.live_maximized #content.compact #live_view::before {
+	display: none;
+}
+/* A mouse can't swipe, so with one the panels have arrow buttons at the screen's edges (hidden by
+   update_panel_arrows when there's no panel that way) */
+.panel_arrow {
+	display: none;
+}
+@media (hover: hover) and (pointer: fine) {
+	#content.compact .panel_arrow {
+		display: block;
+		position: fixed;
+		top: 50%;
+		transform: translateY(-50%);
+		z-index: 50;
+		width: 28px;
+		height: 64px;
+		padding: 0 0 4px 0;
+		border: 1px solid #a80;
+		background: rgba(17, 17, 17, 0.8);
+		color: #FFAA00;
+		font-size: 44px;
+		line-height: 1;
+		cursor: pointer;
+		opacity: 0.7;
+	}
+	#content.compact .panel_arrow:hover {
+		opacity: 1;
+		background: #2e1f00;
+	}
+	#content.compact #panel_prev {
+		left: 0;
+		border-left: none;
+		border-radius: 0 6px 6px 0;
+	}
+	#content.compact #panel_next {
+		right: 0;
+		border-right: none;
+		border-radius: 6px 0 0 6px;
+	}
 }
 
 /* The header is a fixed 100px tall (#content-container's height assumes it), so outside the phone
@@ -391,36 +504,57 @@
 .player_list.web_users td:nth-child(13), .player_list.web_users th:nth-child(13) {
 	display: table-cell;
 }
-/* Wide mode stacks the players and web clients tables in a 450px column. With the automatic layout,
-   the players table's columns shrank to fit it and the web clients' columns stretched to fill it, so
+/* Wide mode stacks the players and web clients tables in a 450px column, and the phone layout in the
+   screen's width. With the automatic layout, the players table's columns shrank to fit it and the web clients' columns stretched to fill it, so
    Name and Status didn't line up. Fixed layout keeps the set widths in both tables, and the last
    visible column of each takes whatever space is left. */
-#content.wide .player_list {
+#content.stacked .player_list {
 	display: table;
 	table-layout: fixed;
 }
-#content.wide .player_list td:first-child, #content.wide .player_list th:first-child {
+#content.stacked .player_list td:first-child, #content.stacked .player_list th:first-child {
 	width: 185px;
 	overflow: hidden;
 	white-space: nowrap;
 }
-#content.wide .player_list td:nth-child(3), #content.wide .player_list th:nth-child(3),
-#content.wide .player_list td:nth-child(4), #content.wide .player_list th:nth-child(4) {
+#content.stacked .player_list td:nth-child(3), #content.stacked .player_list th:nth-child(3),
+#content.stacked .player_list td:nth-child(4), #content.stacked .player_list th:nth-child(4) {
 	width: 45px;
 }
-#content.wide .player_list td:nth-child(5), #content.wide .player_list th:nth-child(5) {
+#content.stacked .player_list td:nth-child(5), #content.stacked .player_list th:nth-child(5) {
 	width: 36px;
 }
-#content.wide .player_list td:nth-child(7), #content.wide .player_list th:nth-child(7),
-#content.wide .player_list.web_users td:nth-child(13), #content.wide .player_list.web_users th:nth-child(13) {
+#content.stacked .player_list td:nth-child(7), #content.stacked .player_list th:nth-child(7),
+#content.stacked .player_list.web_users td:nth-child(13), #content.stacked .player_list.web_users th:nth-child(13) {
 	width: auto;
 }
 /* flag, avatar and rank icon take 70px of the name column */
-#content.wide .player_list div {
+#content.stacked .player_list div {
 	max-width: 140px;
 }
-#content.wide:not(.noflags) .player_list div {
+#content.stacked:not(.noflags) .player_list div {
 	max-width: 115px;
+}
+/* The phone layout's tables are the screen's width, and the name column takes what the others
+   leave. The last visible columns of both tables are set so the others add up to the same width in
+   each (240px), which keeps Name and Status lined up. */
+#content.compact .player_list {
+	width: 100%;
+}
+#content.compact .player_list td:first-child, #content.compact .player_list th:first-child {
+	width: auto;
+}
+#content.compact .player_list td:nth-child(7), #content.compact .player_list th:nth-child(7) {
+	width: 24px;
+}
+#content.compact .player_list.web_users td:nth-child(13), #content.compact .player_list.web_users th:nth-child(13) {
+	width: 94px;
+}
+#content.compact .player_list div {
+	max-width: calc(100% - 35px);
+}
+#content.compact:not(.noflags) .player_list div {
+	max-width: calc(100% - 60px);
 }
 .player_list.web_users_names div {
 	color: #99FF99;
@@ -794,6 +928,7 @@ h2 {
 #empty_notice, #chat_login_notice {
 	position: absolute;
 	top: 50%;
+	left: 0; /* not where the padding of the phone layout's panels would put it, which overflowed them */
 	z-index: 1;
 	margin: 0 auto;
 	font-size: 24px;
@@ -1412,9 +1547,10 @@ h2 {
 	height: 12px;
 	margin-left: 0;
 }
-#map_list_container.live_active #upcoming_maps_header,
-#map_list_container.live_active #upcoming_maps,
-#map_list_container.live_active #filter_maps_container {
+/* the live view takes the map list's place, except in the phone layout, where it's under the current map */
+#content:not(.compact) #map_list_container.live_active #upcoming_maps_header,
+#content:not(.compact) #map_list_container.live_active #upcoming_maps,
+#content:not(.compact) #map_list_container.live_active #filter_maps_container {
 	display: none;
 }
 #live_view {
@@ -1424,10 +1560,6 @@ h2 {
 	min-height: 300px;
 	margin-top: 20px; /* the space the old header took */
 	clear: both;
-}
-#content.compact #live_view {
-	flex: none;
-	height: 75vh;
 }
 #live_view_frame_container {
 	flex: 1;
@@ -1445,12 +1577,15 @@ h2 {
 }
 /* maximized live view: the rest of the dashboard isn't drawn, so it costs nothing */
 body.live_maximized #content > :not(#content-container),
-body.live_maximized #content-container > :not(#map_list_container),
-body.live_maximized #map_list_container > :not(#live_view),
+body.live_maximized #content:not(.compact) #content-container > :not(#map_list_container),
+body.live_maximized #content:not(.compact) #map_list_container > :not(#live_view),
+body.live_maximized #content.compact #content-container > :not(#live_view),
 body.live_maximized #player_profile {
 	display: none !important;
 }
-body.live_maximized #live_view {
+/* #content.compact is in the selector too, so this wins over the phone layout's panel */
+body.live_maximized #live_view,
+body.live_maximized #content.compact #live_view {
 	position: fixed;
 	left: 0;
 	top: 0;
@@ -1469,4 +1604,86 @@ body.live_maximized #live_view_frame_container {
 #live_view_status {
 	color: #ccc;
 	padding: 20px;
+}
+/* the options shown before the player starts (live_view.js) */
+#live_launch {
+	position: absolute;
+	left: 0;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	overflow-y: auto;
+	display: flex;
+	color: #ccc;
+}
+#live_launch.hidden {
+	display: none;
+}
+#live_launch_box {
+	margin: auto; /* centered, and scrolls from the top when it doesn't fit */
+	padding: 16px;
+	max-width: 480px;
+	width: 100%;
+	box-sizing: border-box;
+}
+#live_launch_title {
+	text-align: center;
+	margin: 0 0 20px 0;
+}
+/* the options are a table: names in the first column, values in the second */
+#live_launch_options {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	gap: 12px 16px;
+	align-items: center;
+	margin-bottom: 20px;
+}
+.live_launch_option {
+	display: contents;
+}
+.live_launch_option > label {
+	font-weight: bold;
+	white-space: nowrap;
+}
+.live_launch_optional {
+	font-weight: normal;
+	color: #888;
+}
+.live_launch_value {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+}
+.live_launch_value input[type=checkbox] {
+	margin: 0;
+}
+.live_launch_option.hidden {
+	display: none;
+}
+#live_folder_name {
+	color: #fff;
+	word-break: break-all;
+}
+#live_folder_name.none {
+	color: #888;
+}
+.live_launch_value button.hidden {
+	display: none;
+}
+#live_launch_button {
+	display: block;
+	width: 100%;
+	padding: 10px;
+	font-size: 1.1em;
+	font-weight: bold;
+	cursor: pointer;
+}
+#live_launch_error {
+	color: #fa0;
+	margin-top: 8px;
+	text-align: center;
+}
+#live_launch_error.hidden {
+	display: none;
 }

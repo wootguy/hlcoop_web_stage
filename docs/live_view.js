@@ -1,20 +1,12 @@
 // Live view: replaces the upcoming maps list with the HLTV demo player in player/ (a copy of
 // bspbot's build-web folder: bspguy.js, bspguy.wasm, index.html, coi-sw.js).
 //
-// The player runs on threads, which browsers only allow on a cross-origin isolated page. An iframe
-// can only be isolated if the page around it is too, so the dashboard itself needs the
-// Cross-Origin-Opener-Policy and Cross-Origin-Embedder-Policy headers:
-//   - bspbot's web/serve.py sends them on every page. It also relays the
-//     stream and proxies fastdl downloads, so the player doesn't need the game server to have a
-//     WebSocket relay or CORS headers.
-//   - GitHub Pages (or any plain static server) can't send headers, so live-sw.js adds them to the
-//     dashboard. The dashboard registers it when it loads, so later visits are isolated from the
-//     start. Only a browser that opens the live view before the worker was installed has to reload
-//     the page once. The player then connects to the game server directly (see web/README.md in bspbot):
-//     files come from fastdl, and the stream through the WebServer plugin's relay at
-//     <server_url>/hltv, since browsers can't open the HLTV port's TCP connection themselves.
+// Served by bspbot's web/serve.py (server_adv.bat), the player gets the stream and fastdl downloads
+// through it, so it doesn't need the game server to have a WebSocket relay or CORS headers. Anywhere
+// else (GitHub Pages), it connects to the game server directly (see web/README.md in bspbot): files
+// come from fastdl, and the stream through the WebServer plugin's relay at <server_url>/hltv, since
+// browsers can't open the HLTV port's TCP connection themselves.
 
-var LIVE_RELOAD_KEY = "live-view-reloaded"; // the camera button reloaded the page to isolate it, so the view opens after
 var LIVE_SHOWED_MAPS_KEY = "live-view-showed-maps"; // the map list was hidden before the live view opened
 
 function live_session_get(key) {
@@ -48,9 +40,6 @@ function live_server_config() {
 	return (selector && g_server_configs[selector.value]) || g_server_config;
 }
 
-// The admin's password camera button opens the player without connect=1, so it shows its
-// Connect dialog (with the server filled in) to enter the stream password instead of using the login.
-var g_live_password_mode = false;
 var LIVE_ADMIN_ID = 76561197970806204n; // same id hlcoop.js checks in parse_auth
 
 // shows the admin-only buttons when logged in as the admin. Called by parse_auth and finish_logout.
@@ -59,6 +48,226 @@ function live_update_admin_buttons() {
 	document.querySelectorAll(".live_admin_only").forEach(function(el) {
 		el.classList.toggle("hidden", !admin);
 	});
+	if (live_logged_in())
+		document.getElementById("live_launch_error").classList.add("hidden");
+}
+
+//
+// Launch options, shown in the live view before the player starts: its memory size, a game folder on
+// the viewer's computer, and (for w00tguy) debug mode, which opens the player's Connect dialog (with the
+// server filled in, to enter the stream password) instead of connecting with the login. The memory size
+// and debug mode are kept in localStorage.
+//
+var LIVE_LAUNCH_KEY = "live-view-launch";
+var g_live_launch = { memory: 256, debug: false, folder: "" }; // folder = the last one's name
+
+function live_load_launch_options() {
+	try {
+		let saved = JSON.parse(localStorage.getItem(LIVE_LAUNCH_KEY) || "{}");
+		if ([128, 256, 512].includes(saved.memory))
+			g_live_launch.memory = saved.memory;
+		g_live_launch.debug = !!saved.debug;
+		g_live_launch.folder = typeof saved.folder === "string" ? saved.folder : "";
+	} catch (e) {}
+}
+function live_save_launch_options() {
+	try { localStorage.setItem(LIVE_LAUNCH_KEY, JSON.stringify(g_live_launch)); } catch (e) {}
+}
+
+// The game folder is passed to the player the ways its settings' Storage tab keeps one (webPickLocalFolder
+// in bspbot's WebPlatform.cpp). This page is on the player's origin, so they share them:
+// - Where the browser has showDirectoryPicker (Chrome), the folder's handle is saved in IndexedDB
+//   (bspguy-local), which the player opens when it starts. That's remembered between visits, but the
+//   browser may ask for permission to read it again, which Launch does (it needs a click).
+// - Otherwise (Firefox), and for folders Chrome won't open that way (Program Files), the folder's files
+//   are picked with <input webkitdirectory> and kept on this page (window.bspguyLocalFolder), which the
+//   player reads from its parent. Firefox can only give a page files the viewer picked, and only until
+//   the page closes (keeping them would mean copying the whole folder into the browser's storage), so
+//   there it has to be picked again on each visit. Its name is remembered to say which.
+var g_live_folder_handle = null; // the remembered folder (showDirectoryPicker)
+// A folder is being picked: from the click until the browser has given this page its files (or the
+// picker was cancelled). A big folder (a whole Half-Life install) can take the browser many seconds
+// after its dialog closes, and a player launched meanwhile wouldn't get it, so Launch waits.
+var g_live_folder_picking = false;
+var g_live_after_pick = []; // what's waiting for the pick to finish
+var g_live_folder_input = null; // kept in the page until it reports back, so it isn't collected first
+
+function live_can_remember_folder() {
+	return !!(window.showDirectoryPicker && window.indexedDB);
+}
+
+// the player's database for the remembered folder (same version and store as WebPlatform.cpp's idb())
+function live_folder_db(mode, op) {
+	return new Promise(function(resolve, reject) {
+		let req = indexedDB.open("bspguy-local", 1);
+		req.onupgradeneeded = function() { req.result.createObjectStore("folders"); };
+		req.onerror = function() { reject(req.error); };
+		req.onsuccess = function() {
+			let db = req.result;
+			let tx = db.transaction("folders", mode);
+			let r = op(tx.objectStore("folders"));
+			tx.oncomplete = function() { db.close(); resolve(r.result); };
+			tx.onerror = tx.onabort = function() { db.close(); reject(tx.error); };
+		};
+	});
+}
+
+function live_update_folder_ui() {
+	let shared = window.bspguyLocalFolder;
+	let name = shared ? shared.name : g_live_folder_handle ? g_live_folder_handle.name : "";
+	if (name && name !== g_live_launch.folder) {
+		g_live_launch.folder = name;
+		live_save_launch_options();
+	}
+	let nameEl = document.getElementById("live_folder_name");
+	nameEl.textContent = g_live_folder_picking ? "Reading the folder's files..."
+		: name ? name + (shared && live_can_remember_folder() ? " (this visit)" : "") : "None";
+	nameEl.classList.toggle("none", !name || g_live_folder_picking);
+	document.getElementById("live_folder_visit").classList.toggle("hidden", !live_can_remember_folder());
+	document.getElementById("live_folder_clear").classList.toggle("hidden", !name);
+}
+
+// reads which folder the player will use: one kept on this page, or the remembered one
+function live_read_folder() {
+	if (window.bspguyLocalFolder || !live_can_remember_folder()) {
+		g_live_folder_handle = null;
+		live_update_folder_ui();
+		return;
+	}
+	live_folder_db("readonly", function(s) { return s.get("folder"); }).then(function(h) {
+		g_live_folder_handle = h || null;
+	}).catch(function(e) {
+		console.warn("Couldn't read the game folder (" + e + ")");
+	}).then(live_update_folder_ui);
+}
+
+function live_pick_started() {
+	g_live_folder_picking = true;
+	live_update_folder_ui();
+}
+function live_pick_finished() {
+	if (!g_live_folder_picking)
+		return;
+	g_live_folder_picking = false;
+	if (g_live_folder_input) {
+		g_live_folder_input.remove();
+		g_live_folder_input = null;
+	}
+	live_update_folder_ui();
+	let waiting = g_live_after_pick;
+	g_live_after_pick = [];
+	waiting.forEach(function(f) { f(); });
+}
+
+function live_pick_folder(remember) {
+	if (g_live_folder_picking)
+		return;
+	if (remember && live_can_remember_folder()) {
+		live_pick_started();
+		window.showDirectoryPicker({ id: "bspguy-game", mode: "read" }).then(function(h) {
+			delete window.bspguyLocalFolder;
+			g_live_folder_handle = h;
+			// saved before the pick counts as finished, since that's where the player reads it from
+			return live_folder_db("readwrite", function(s) { return s.put(h, "folder"); });
+		}).catch(function(e) {
+			if (e.name !== "AbortError")
+				console.warn("Couldn't open the game folder (" + e + ")");
+		}).then(live_pick_finished);
+		return;
+	}
+	let input = g_live_folder_input = document.createElement("input");
+	input.type = "file";
+	input.webkitdirectory = true;
+	input.multiple = true;
+	input.style.display = "none";
+	document.body.appendChild(input);
+	input.addEventListener("change", function() {
+		let files = input.files;
+		if (files && files.length) {
+			let list = Array.from(files);
+			window.bspguyLocalFolder = {
+				name: list[0].webkitRelativePath.split("/")[0],
+				paths: list.map(function(f) { return f.webkitRelativePath; }),
+				files: list
+			};
+			g_live_folder_handle = null;
+			console.log("Game folder for the live view: " + window.bspguyLocalFolder.name + " (" + list.length + " files)");
+			if (window.indexedDB)
+				live_folder_db("readwrite", function(s) { return s.delete("folder"); }).catch(function() {});
+		}
+		live_pick_finished();
+	});
+	input.addEventListener("cancel", live_pick_finished);
+	live_pick_started();
+	input.click();
+}
+
+function live_clear_folder() {
+	delete window.bspguyLocalFolder;
+	g_live_folder_handle = null;
+	g_live_launch.folder = "";
+	live_save_launch_options();
+	live_update_folder_ui();
+	if (window.indexedDB)
+		live_folder_db("readwrite", function(s) { return s.delete("folder"); }).catch(function() {});
+}
+
+// Asks to read the remembered folder again if the browser wants that. Called from Launch's click, which
+// the request needs. The player only queries the permission, so it starts with the folder readable.
+function live_allow_folder() {
+	let h = g_live_folder_handle;
+	if (!h || !h.queryPermission || window.bspguyLocalFolder)
+		return Promise.resolve();
+	let opts = { mode: "read" };
+	return h.queryPermission(opts).then(function(p) {
+		if (p !== "granted")
+			return h.requestPermission(opts);
+	}).catch(function(e) {
+		console.warn("Couldn't get permission to read the game folder (" + e + ")");
+	});
+}
+
+function show_live_launch(visible) {
+	document.getElementById("live_launch").classList.toggle("hidden", !visible);
+	document.getElementById("live_launch_button").textContent = "Launch";
+	if (!visible)
+		return;
+	g_live_after_pick = []; // a Launch from before the view was closed
+	document.getElementById("live_memory").value = String(g_live_launch.memory);
+	document.getElementById("live_debug").checked = g_live_launch.debug;
+	document.getElementById("live_launch_error").classList.add("hidden");
+	live_read_folder();
+}
+
+function live_launch_debug() {
+	// the debug option is only shown to w00tguy (developer_options, see parse_auth)
+	let el = document.getElementById("live_debug");
+	return el.checked && !el.closest(".developer_options").classList.contains("hidden");
+}
+
+function live_launch_clicked() {
+	g_live_launch.memory = parseInt(document.getElementById("live_memory").value) || 256;
+	g_live_launch.debug = document.getElementById("live_debug").checked;
+	live_save_launch_options();
+	let debug = live_launch_debug();
+	if (!debug && !live_logged_in()) {
+		document.getElementById("live_launch_error").classList.remove("hidden");
+		return;
+	}
+	let launch = function() {
+		live_allow_folder().then(function() {
+			if (live_view_is_open() && !live_frame_window())
+				start_live_player();
+		});
+	};
+	if (g_live_folder_picking) {
+		// starts once the folder's files are in (see g_live_folder_picking)
+		if (!g_live_after_pick.includes(launch))
+			g_live_after_pick = [launch];
+		document.getElementById("live_launch_button").textContent = "Waiting for the folder...";
+		return;
+	}
+	launch();
 }
 
 // The player logs in to the stream with the page's token cookie, so watching needs a Steam login.
@@ -74,14 +283,19 @@ function live_player_url(hasProxy) {
 	let config = live_server_config();
 	let params = new URLSearchParams();
 	params.set("server", config.hltv_address);
-	if (!g_live_password_mode)
+	if (!live_launch_debug())
 		params.set("connect", "1");
-	if (g_settings && g_settings.potato_spectator)
-		params.set("potato", "1"); // the cog menu's "Potato spectator", for slow computers
+	params.set("memory", String(g_live_launch.memory));
 	if (!hasProxy) {
 		params.set("direct", "1");
 		params.set("stream", new URL("hltv", config.server_url).href);
 	}
+	// the player's testing options (see player/index.html), passed on from the dashboard's address
+	let pageParams = new URLSearchParams(window.location.search);
+	["lowmem", "reserve"].forEach(function(name) {
+		if (pageParams.get(name))
+			params.set(name, pageParams.get(name));
+	});
 	return "player/index.html?" + params.toString();
 }
 
@@ -98,6 +312,7 @@ function live_view_is_open() {
 function set_live_view_visible(visible) {
 	document.getElementById("map_list_container").classList.toggle("live_active", visible);
 	document.getElementById("live_view").classList.toggle("hidden", !visible);
+	update_panel_arrows(); // it's the phone layout's last panel while it's open
 
 	// the camera icons on the current map close the view while it's open, and show a red cross
 	document.querySelectorAll(".watch_live_button").forEach(function(el) {
@@ -254,8 +469,16 @@ window.addEventListener("message", function(e) {
 // fills the page with the player and hides the rest of the dashboard, so the browser doesn't spend
 // time drawing it. The player's toolbar has the button for it (bspguy_maximize).
 function set_live_view_maximized(maximized) {
+	let was_maximized = live_view_is_maximized();
 	document.body.classList.toggle("live_maximized", maximized);
 	live_post({ type: "bspguy_maximized", maximized: maximized });
+
+	// The phone layout's other panels are hidden while it's maximized, which scrolls the row of
+	// panels back to the first, so this goes back to the live view's panel (the last one).
+	if (was_maximized && !maximized && g_compact_mode && live_view_is_open()) {
+		let container = document.getElementById("content-container");
+		container.scrollLeft = container.scrollWidth;
+	}
 }
 
 function live_view_is_maximized() {
@@ -268,58 +491,46 @@ function remove_live_frame() {
 	});
 }
 
-function live_can_isolate() {
-	return "serviceWorker" in navigator && window.isSecureContext;
-}
-
-function live_register_worker() {
-	return navigator.serviceWorker.register("live-sw.js").then(function() {
-		return navigator.serviceWorker.ready;
-	});
-}
-
-// reloads the dashboard with live-sw.js adding the isolation headers
-function live_enable_isolation() {
-	let unsupported = "Your browser can't run the live view on this page. It needs service workers and "
-		+ "cross-origin isolation (try a current Chrome, Edge or Firefox).";
-
-	if (!live_can_isolate()) {
-		live_status(unsupported);
+// The player used to need the dashboard to be cross-origin isolated, which live-sw.js (a service
+// worker) did by adding headers. It doesn't anymore, so a browser that still has the worker loses it.
+function live_remove_old_worker() {
+	if (!("serviceWorker" in navigator))
 		return;
-	}
-	if (live_session_get(LIVE_RELOAD_KEY)) {
-		live_session_set(LIVE_RELOAD_KEY, null); // the reload didn't help. Let the button try again
-		live_status(unsupported);
-		return;
-	}
-
-	live_status("Loading...");
-	live_register_worker().then(function() {
-		live_session_set(LIVE_RELOAD_KEY, g_live_password_mode ? "password" : "1"); // keeps the mode across the reload
-		location.reload();
-	}).catch(function(e) {
-		// e.g. Ladybird has navigator.serviceWorker but can't run one yet
-		live_status(unsupported + " (" + e + ")");
-	});
+	navigator.serviceWorker.getRegistrations().then(function(regs) {
+		regs.forEach(function(reg) {
+			let w = reg.active || reg.waiting || reg.installing;
+			if (w && /\/live-sw\.js$/.test(new URL(w.scriptURL).pathname))
+				reg.unregister();
+		});
+	}).catch(function() {});
 }
 
 function open_live_view() {
-	// the live view takes the place of the map list, so that has to be showing
-	if (document.getElementById("hide_maps_cb").checked) {
+	// the live view takes the place of the map list, so that has to be showing (except in the phone
+	// layout, where it's a panel of its own)
+	if (document.getElementById("hide_maps_cb").checked && !g_compact_mode) {
 		live_session_set(LIVE_SHOWED_MAPS_KEY, "1");
 		set_maps_hidden(false);
 	}
 
+	let was_open = live_view_is_open();
 	set_live_view_visible(true);
-	remove_live_frame();
 
-	if (!window.crossOriginIsolated) {
-		live_enable_isolation();
-		return;
+	// the phone layout swipes to the live view's panel, after the chat
+	if (g_compact_mode && !was_open) {
+		let container = document.getElementById("content-container");
+		requestAnimationFrame(function() {
+			container.scrollTo({ left: container.scrollWidth, behavior: "smooth" });
+		});
 	}
-	live_session_set(LIVE_RELOAD_KEY, null);
+	remove_live_frame();
 	live_status("");
+	show_live_launch(true); // the player starts from its Launch button
+}
 
+function start_live_player() {
+	show_live_launch(false);
+	remove_live_frame();
 	live_check_proxy().then(function(hasProxy) {
 		if (!live_view_is_open())
 			return; // closed while checking
@@ -351,20 +562,17 @@ ready(function() {
 				close_live_view();
 				return;
 			}
-			g_live_password_mode = id.indexOf("password") != -1;
-			if (!g_live_password_mode && !live_logged_in()) {
-				action_denied_popup(WEBDENY_NOT_LOGGED_IN_LIVE);
-				return;
-			}
 			open_live_view();
+			// the admin's password camera starts with debug mode checked (the player's Connect dialog)
+			if (id.indexOf("password") != -1)
+				document.getElementById("live_debug").checked = true;
 		});
 	});
-	// the cog menu's "Test spectator app": the player in password mode (its Connect dialog), which
-	// works while signed out. Reopens it in that mode if the view is already open.
-	document.getElementById("test_spectator_button").addEventListener("click", function() {
-		g_live_password_mode = true;
-		open_live_view();
-	});
+	live_load_launch_options();
+	document.getElementById("live_launch_button").addEventListener("click", live_launch_clicked);
+	document.getElementById("live_folder_pick").addEventListener("click", function() { live_pick_folder(true); });
+	document.getElementById("live_folder_visit").addEventListener("click", function() { live_pick_folder(false); });
+	document.getElementById("live_folder_clear").addEventListener("click", live_clear_folder);
 	document.addEventListener("keydown", function(e) {
 		// only reaches here when the player doesn't have focus
 		if (e.key == "Escape" && live_view_is_maximized())
@@ -372,14 +580,11 @@ ready(function() {
 	});
 
 	document.getElementById("server_selector").addEventListener("change", function() {
-		if (live_view_is_open() && window.crossOriginIsolated)
-			open_live_view(); // reconnect to the new server's stream
+		if (live_frame_window())
+			start_live_player(); // reconnect to the new server's stream
 	});
 
-	// installs live-sw.js ahead of time, so the next visit is isolated and opening the view doesn't
-	// have to reload the page
-	if (!window.crossOriginIsolated && live_can_isolate())
-		live_register_worker().catch(function() {});
+	live_remove_old_worker();
 
 	// links and bookmarks from when the open view was marked with ?live=1. The view only opens
 	// from the camera button.
@@ -389,10 +594,7 @@ ready(function() {
 		history.replaceState(history.state, "", url.toString());
 	}
 
-	if (live_session_get(LIVE_RELOAD_KEY)) {
-		g_live_password_mode = live_session_get(LIVE_RELOAD_KEY) == "password";
-		open_live_view(); // finishes the camera button's click
-	} else if (live_session_get(LIVE_SHOWED_MAPS_KEY)) {
+	if (live_session_get(LIVE_SHOWED_MAPS_KEY)) {
 		// the page was reloaded with the view open, which showed the hidden map list
 		live_session_set(LIVE_SHOWED_MAPS_KEY, null);
 		set_maps_hidden(true);

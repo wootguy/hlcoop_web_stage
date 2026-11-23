@@ -2,20 +2,22 @@
 <html>
 	<head>
 		<link rel="shortcut icon" type="image/x-icon" href="icon/favicon.ico">
-		<script type="text/javascript" src="shared.js"></script>
-		<script type="text/javascript" src="hlcoop.js"></script>
-		<script type="text/javascript" src="live_view.js"></script>
+		<script type="text/javascript" src="shared.js?v=9"></script>
+		<script type="text/javascript" src="hlcoop.js?v=9"></script>
+		<script type="text/javascript" src="live_view.js?v=17"></script>
 		<script async type="text/javascript" src="app.js"></script>
 		<script>var Module = { print: console.log, printErr: console.error };</script>
-		<link rel="stylesheet" href="dashboard.css">
-		<link rel="stylesheet" href="common.css">
-		<link rel="stylesheet" href="player_profile.css">
+		<link rel="stylesheet" href="dashboard.css?v=13">
+		<link rel="stylesheet" href="common.css?v=9">
+		<link rel="stylesheet" href="player_profile.css?v=9">
 		<meta name="viewport" content="width=device-width, initial-scale=1">
 		<title id="tab_title">Half-Life Co-op</title>
 	</head>
 
 	<body>
 		<div id="content">
+			<!-- the phone layout moves this to the top of the players panel (handle_resize) -->
+			<div id="page_header">
 			<h1 id="server_name">Half-Life Co-op</h1>
 			<div id="server_link_container">
 				<a class="server_link" href="/hlcoop_web/">Dashboard</a>
@@ -37,9 +39,10 @@
 				<br/>
 				<div id="login_subtext">(required for some actions)</div>
 			</a>
-			
+
 			<hr>
-		
+			</div>
+
 			<div id="content-container" class="hidden">
 				<div id="player_list_container">
 					<div id="player_list_content">
@@ -96,9 +99,6 @@
 									</div>
 									<div class="chat_settings_option wakelock_settings">
 										<label title="Keep the screen awake while the dashboard is open">Keep screen awake<input id="keep_screen_awake" type="checkbox"></label>
-									</div>
-									<div class="chat_settings_option">
-										<label title="For slow computers. The live view shows the game only once all of its files have downloaded, renders at half resolution, and uses WebGL 1.">Potato spectator<input id="potato_spectator" type="checkbox"></label>
 									</div>
 									<div class="chat_settings_option authed_only hidden">
 										<label title="Display server performance graph. Use this to find out if you or the server is lagging.">Performance graph<input id="show_perf" type="checkbox"></label>
@@ -167,9 +167,6 @@ Manual = Click to translate.">Translations</label>
 												<option value="Stage">Stage</option>
 												<option value="Local">Local</option>
 											</select>
-										</div>
-										<div id="test_spectator_button" class="chat_settings_option" title="Launches the spectator app for testing purposes. For w00tguy only.">
-											<label>Test spectator app</label>
 										</div>
 									</div>
 								</div>
@@ -252,6 +249,38 @@ Red light = Negative ratings. Low priority. Selected only if all other maps are 
 					<div id="live_view" class="hidden">
 						<div id="live_view_frame_container">
 							<div id="live_view_status" class="hidden"></div>
+							<div id="live_launch" class="hidden">
+								<div id="live_launch_box">
+									<h2 id="live_launch_title">Live View</h2>
+									<div id="live_launch_options">
+									<div class="live_launch_option">
+										<label for="live_memory">Memory <span class="tooltip" title="How much RAM to give the viewer.&#10;&#10;128 MB is enough for most maps, but some will swap to disk occasionally, which can cause frame drops. The player may also crash if left running for many hours due to heap fragmentation.&#10;&#10;256 MB is more than enough for the heaviest maps and should never swap to disk or crash.&#10;&#10;512 MB is here in case of bugs or future bloated maps that trigger excessive memory allocations.">(?)</span></label>
+										<div class="live_launch_value">
+											<select id="live_memory">
+												<option value="128">128 MB</option>
+												<option value="256">256 MB</option>
+												<option value="512">512 MB</option>
+											</select>
+										</div>
+									</div>
+									<div class="live_launch_option">
+										<label>Game folder <span class="live_launch_optional">(optional)</span> <span id="live_folder_hint" class="tooltip" title="Loads the game's files from your computer instead of downloading them. Select your Half-Life folder or a specific content folder like valve_downloads if you want to restrict what gets loaded.&#10;&#10;Default files (valve/*) are still loaded from downloaded asset packs for faster loading. Files you don't have are stored in the browser and not written to your game folder. Check the Storage tab in settings to manage the browser's file cache.&#10;&#10;Firefox users must &quot;upload&quot; this folder every time they refresh the page. Nothing is actually uploaded: the browser only gives this page the list of files, and the ones the viewer needs are read from your disk.">(?)</span></label>
+										<div class="live_launch_value">
+											<button id="live_folder_pick">Choose...</button>
+											<button id="live_folder_visit" class="hidden" title="For folders the browser won't remember, such as one in Program Files">This visit only...</button>
+											<button id="live_folder_clear" class="hidden">Clear</button>
+											<span id="live_folder_name"></span>
+										</div>
+									</div>
+									<div class="live_launch_option developer_options">
+										<label for="live_debug">Debug mode <span class="tooltip" title="Opens the Connect dialog instead of connecting with your login. Leave this disabled unless your name is w00tguy.">(?)</span></label>
+										<div class="live_launch_value"><input type="checkbox" id="live_debug"></div>
+									</div>
+									</div>
+									<button id="live_launch_button">Launch</button>
+									<div id="live_launch_error" class="hidden">Sign in with Steam to watch the game live.</div>
+								</div>
+							</div>
 						</div>
 					</div>
 					<div id="perf-container" class="authed_only hidden">
@@ -282,8 +311,11 @@ The bars underneath the graph represent the total time spent in each type of fun
 					</div>
 				</div>
 			</div>
+			<!-- the phone layout's panels, for a mouse (dashboard.css shows them) -->
+			<button id="panel_prev" class="panel_arrow hidden" title="Previous panel">&#8249;</button>
+			<button id="panel_next" class="panel_arrow hidden" title="Next panel">&#8250;</button>
 		</div>
-		
+
 		<div id="player_profile"></div>
 		
 		<div id="popup" class="popup">
@@ -295,9 +327,6 @@ The bars underneath the graph represent the total time spent in each type of fun
 				</p>
 				<p id="popup-text-no-chat" class="popup-text">
 					Sign in with Steam to send chat messages.
-				</p>
-				<p id="popup-text-no-live" class="popup-text">
-					Sign in with Steam to watch the game live.
 				</p>
 				<p id="popup-text-banned" class="popup-text">
 					You are banned from the server and cannot sign in.
